@@ -70,7 +70,7 @@ def cargar(ticker: str) -> datos.Empresa:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def buscar(texto: str):
+def buscar(texto: str, _v: int = 2):
     return datos.buscar(texto)
 
 
