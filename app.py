@@ -70,7 +70,7 @@ def cargar(ticker: str) -> datos.Empresa:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def buscar(texto: str, _v: int = 2):
+def buscar(texto: str, version: int = 2):
     return datos.buscar(texto)
 
 
@@ -82,7 +82,7 @@ modo = st.sidebar.radio("Buscar por", ["Nombre", "Ticker"], horizontal=True)
 ticker = None
 if modo == "Nombre":
     q = st.sidebar.text_input("Empresa", value="Inditex", help="Escribe el nombre y elige el ticker de la bolsa que quieras.")
-    resultados = buscar(q) if q else []
+    resultados = buscar(q, 2) if q else []
     if resultados:
         opciones = {f"{r['symbol']} · {r['nombre']} ({r['bolsa']})": r["symbol"] for r in resultados}
         ticker = opciones[st.sidebar.selectbox("Resultados", list(opciones))]
