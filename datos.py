@@ -130,20 +130,42 @@ def buscar(texto: str, n: int = 10) -> list[dict]:
     if yf is None or not texto.strip():
         return []
     try:
-        res = yf.Search(texto, max_results=n, news_count=0).quotes
+        res = yf.Search(texto, max_results=max(n, 15), news_count=0).quotes
     except Exception:
         return []
     out = []
-    for q in res:
+    for orden, q in enumerate(res):
         if q.get("quoteType") not in ("EQUITY", "ETF", None):
             continue
+        sym = q.get("symbol") or ""
+        bolsa = q.get("exchange", "")
         out.append({
-            "symbol": q.get("symbol"),
-            "nombre": q.get("longname") or q.get("shortname") or q.get("symbol"),
-            "bolsa": q.get("exchDisp") or q.get("exchange", ""),
+            "symbol": sym,
+            "nombre": q.get("longname") or q.get("shortname") or sym,
+            "bolsa": q.get("exchDisp") or bolsa,
             "tipo": q.get("quoteType", ""),
+            "_rank": (_prioridad_bolsa(sym, bolsa), orden),
         })
-    return out
+    out.sort(key=lambda r: r["_rank"])
+    for r in out:
+        r.pop("_rank")
+    return out[:n]
+
+
+# Bolsas principales primero; certificados, mercados secundarios alemanes y OTC al final
+_BOLSAS_PRINCIPALES = {"NMS", "NYQ", "NGM", "NCM", "ASE", "MCE", "PAR", "GER", "LSE", "AMS", "MIL", "EBS",
+                       "BRU", "LIS", "CPH", "STO", "HEL", "OSL", "VIE", "TOR", "JPX", "HKG", "ASX", "SAO", "MEX"}
+_SECUNDARIAS = {"NEO", "TLX", "HAM", "DUS", "MUN", "BER", "STU", "HAN", "FRA", "PNK", "OQB", "OQX", "IOB", "CXE", "AQS"}
+
+
+def _prioridad_bolsa(simbolo: str, bolsa: str) -> int:
+    base = simbolo.split(".")[0]
+    asiatica = bolsa in {"JPX", "HKG", "SHH", "SHZ", "KSC", "TAI"}
+    if bolsa in _SECUNDARIAS or (any(c.isdigit() for c in base) and not asiatica):
+        return 2  # certificados y dobles cotizaciones (p. ej. IXD1.DE, 4ITX.TI)
+    if bolsa in _BOLSAS_PRINCIPALES:
+        return 0
+    return 1
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +392,10 @@ def metricas(e: Empresa, crecimiento_dcf=None, tasa_descuento=0.09, crec_termina
     if m["ev_ebitda"] is not None and m["ev_ebitda"] <= 0:
         m["ev_ebitda"] = None
     m["ev"] = num(i.get("enterpriseValue"))
+    if not misma_moneda:
+        # Yahoo mezcla el precio en una moneda con beneficios en otra: los múltiplos no son fiables
+        for k in ("per", "per_fwd", "peg", "p_vc", "p_ventas", "ev_ebitda"):
+            m[k] = None
 
     fcf_ttm = num(i.get("freeCashflow")) or _val(fcf_s)
     m["fcf"] = fcf_ttm

@@ -262,7 +262,7 @@ def evaluar(m: dict, sector: str, pesos: dict | None = None, umbral_comprar=UMBR
             and mh is not None and mh < 0):
         tope("Tendencia bajista fuerte (> 20% bajo la media de 200 y MACD negativo): mejor esperar a que gire.")
     if not g("misma_moneda", True):
-        alertas.append("La empresa reporta en una moneda distinta a la de cotización: DCF, Graham y Altman se omiten.")
+        alertas.append("Este ticker cotiza en una moneda distinta a la de sus cuentas (p. ej. un certificado en otra bolsa): se omiten múltiplos, DCF, Graham y Altman. Busca la cotización en su bolsa principal para un análisis completo.")
     if cobertura < 0.45:
         alertas.append(f"Solo hay datos para el {cobertura * 100:.0f}% de las métricas: conclusión poco fiable.")
         if veredicto != "Sin datos":
