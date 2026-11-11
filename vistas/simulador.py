@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -102,7 +103,11 @@ for k in ("o", "h", "l"):
     datos_js[k] = [c if (v is None or v <= 0) else v for v, c in zip(datos_js[k], datos_js["c"])]
 
 ver = version_plotly_js()
-html = (PLANTILLA.read_text(encoding="utf-8")
+plantilla = PLANTILLA.read_text(encoding="utf-8")
+if os.environ.get("SIMULADOR_PLOTLY_LOCAL"):  # solo para pruebas sin internet
+    import plotly.offline as po
+    plantilla = plantilla.replace('<script src="__PLOTLY_SRC__"></script>', "<script>" + po.get_plotlyjs() + "</script>")
+html = (plantilla
         .replace("__PLOTLY_SRC__", f"https://cdn.plot.ly/plotly-{ver}.min.js")
         .replace("__PLOTLY_FALLBACK__", f"https://cdn.jsdelivr.net/npm/plotly.js-dist-min@{ver}/plotly.min.js")
         .replace("__DATOS__", json.dumps(datos_js, ensure_ascii=False, allow_nan=False)))

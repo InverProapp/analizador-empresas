@@ -46,6 +46,11 @@
   .lect .alc { border-color:var(--verde); } .lect .baj { border-color:var(--rojo); } .lect .neu { border-color:var(--ambar); }
   .resumen-lect { margin-top:10px; padding:8px 12px; background:var(--fondo); border-radius:8px; font-size:13.5px; line-height:1.45; }
   tr.hoy td { background:#fff6db; }
+  .herr { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:10px; padding:8px; background:var(--fondo); border-radius:10px; }
+  .herr-tit { font-size:12px; color:#555; font-weight:600; margin-right:2px; }
+  .herr .sep { width:1px; height:24px; background:var(--borde); margin:0 4px; }
+  .herr-btn.activo { background:var(--azul); border-color:var(--azul); color:#fff; }
+  .ayuda-herr { font-size:12.5px; color:#1d4f9c; margin:6px 2px 0; min-height:18px; }
   .etq-linea { display:inline-block; width:22px; height:0; border-top:2px dashed; vertical-align:middle; margin-right:4px; }
 </style>
 </head>
@@ -98,9 +103,23 @@
       <div class="ctl" style="min-width:140px"><label>Simular desde</label><input type="date" id="desde"></div>
       <div class="ctl" style="min-width:140px"><label>hasta</label><input type="date" id="hasta"></div>
       <button class="btn" id="usarZoom" title="Usa como periodo de simulación lo que estás viendo en el gráfico">🔍 Simular el tramo que estoy viendo</button>
-      <button class="btn" id="borrarDibujos">🧽 Borrar mis dibujos</button>
       <button class="btn" id="reset">↺ Restablecer todo</button>
     </div>
+    <div class="herr" id="herramientas">
+      <span class="herr-tit">Herramientas:</span>
+      <button class="btn herr-btn" data-modo="zoom" title="Arrastra para ampliar una zona">🔍 Zoom</button>
+      <button class="btn herr-btn" data-modo="pan" title="Arrastra para desplazarte por el gráfico">✋ Mover</button>
+      <span class="sep"></span>
+      <button class="btn herr-btn" data-modo="hline" title="Haz clic a la altura del precio que quieras marcar">➖ Soporte / resistencia</button>
+      <button class="btn herr-btn" data-modo="drawline" title="Pulsa y arrastra de un punto a otro">📏 Línea de tendencia</button>
+      <button class="btn herr-btn" data-modo="drawopenpath" title="Pulsa y arrastra para dibujar a mano alzada">✏️ A mano</button>
+      <button class="btn herr-btn" data-modo="drawrect" title="Pulsa y arrastra para marcar una zona">▭ Rectángulo</button>
+      <button class="btn herr-btn" data-modo="drawcircle" title="Pulsa y arrastra">◯ Círculo</button>
+      <span class="sep"></span>
+      <button class="btn" id="deshacerDibujo" title="Quita el último dibujo">↶ Deshacer</button>
+      <button class="btn" id="borrarDibujos" title="Quita todos tus dibujos de esta empresa">🗑️ Borrar dibujos</button>
+    </div>
+    <div class="ayuda-herr" id="ayudaHerr"></div>
     <div id="graf" style="height:660px; margin-top:6px"></div>
     <div class="ayuda" id="ayuda"></div>
   </div>
@@ -293,7 +312,7 @@ const DEF = Object.assign({
   rsiN: 14, rsiBaja: 30, rsiAlta: 70, dca: 300, bollModo: "rebote", bollSalida: "superior", bollN: 20, bollK: 2, volMin: 0,
   filtroTend: true, horizonte: 20, capital: 10000, comision: 0.1, stop: 0, trailing: 0, objetivo: 0,
   impuestos: 0, reinvertir: false, repetir: true, velas: true, log: false, m50: false, m200: false, boll: false,
-  vol: true, rsiPanel: false, desde: null, hasta: null, pestana: "ops", dibujos: [],
+  vol: true, rsiPanel: false, desde: null, hasta: null, pestana: "ops", dibujos: [], modo: "zoom",
 }, D.defectos || {});
 let S = Object.assign({}, DEF);
 try { const g = JSON.parse(localStorage.getItem(CLAVE) || "null"); if (g) S = Object.assign(S, g); } catch (e) {}
@@ -469,6 +488,37 @@ $("usarZoom").onclick = () => {
   S.desde = String(r[0]).slice(0, 10); S.hasta = String(r[1]).slice(0, 10); cambio();
 };
 $("borrarDibujos").onclick = () => { S.dibujos = []; guardar(); pintarGrafico(); };
+$("deshacerDibujo").onclick = () => { (S.dibujos || []).pop(); guardar(); pintarGrafico(); };
+const AYUDA_MODO = {
+  zoom: "🔍 Arrastra sobre el gráfico para ampliar una zona. Doble clic para volver a verlo todo.",
+  pan: "✋ Arrastra para desplazarte por el gráfico.",
+  hline: "➖ Haz <b>clic</b> en el gráfico a la altura del precio que quieras marcar (soporte o resistencia). Luego puedes arrastrar la línea para moverla.",
+  drawline: "📏 <b>Pulsa y arrastra</b> desde el primer punto hasta el segundo (no basta con dos clics). Empieza fuera de las líneas de compra/venta.",
+  drawopenpath: "✏️ <b>Pulsa y arrastra</b> para dibujar a mano alzada.",
+  drawrect: "▭ <b>Pulsa y arrastra</b> en diagonal para marcar una zona.",
+  drawcircle: "◯ <b>Pulsa y arrastra</b> para dibujar un círculo o elipse.",
+};
+function pintarHerramientas() {
+  document.querySelectorAll(".herr-btn").forEach(b => b.classList.toggle("activo", b.dataset.modo === S.modo));
+  $("ayudaHerr").innerHTML = AYUDA_MODO[S.modo] || "";
+}
+document.querySelectorAll(".herr-btn").forEach(b => b.onclick = () => {
+  S.modo = b.dataset.modo; guardar(); pintarHerramientas();
+  Plotly.relayout(gd, { dragmode: S.modo === "hline" ? false : S.modo, hovermode: S.modo === "hline" ? false : "x unified" });
+});
+// Línea horizontal: un clic en el área del gráfico
+$("graf").addEventListener("click", (ev) => {
+  if (S.modo !== "hline" || !gd._fullLayout) return;
+  const fl = gd._fullLayout, ya = fl.yaxis, sz = fl._size, r = gd.getBoundingClientRect();
+  const px = ev.clientX - r.left - sz.l, py = ev.clientY - r.top - ya._offset;
+  if (px < 0 || px > sz.w || py < 0 || py > ya._length) return;
+  let precio = ya.p2l(py); if (ya.type === "log") precio = Math.pow(10, precio);
+  if (!isFinite(precio) || precio <= 0) return;
+  precio = redondeo(precio);
+  S.dibujos = (S.dibujos || []).concat([{ type: "line", xref: "paper", x0: 0, x1: 1, y0: precio, y1: precio, name: "nivel", editable: true, layer: "above",
+    line: { color: "#8e44ad", width: 2 }, label: { text: `${fN(precio)}`, textposition: "end", font: { color: "#8e44ad", size: 12 } } }]);
+  guardar(); pintarGrafico();
+});
 $("reset").onclick = () => { const dib = S.dibujos; S = Object.assign({}, DEF); S.dibujos = dib; guardar(); location.reload(); };
 
 let temporizador = null, enfocarPeriodo = true;
@@ -534,6 +584,9 @@ function submuestra(arr, x, g) { // para líneas (medias, etc.): un punto por gr
 }
 function trazasPrecio(i0, i1) {
   const x = D.fechas, t = [], g = granularidad, V = velas(g);
+  // Periodo simulado sombreado (traza fija en un eje auxiliar 0-1 para que no se pueda arrastrar)
+  t.push({ type: "scatter", x: [D.fechas[i0], D.fechas[i1], D.fechas[i1], D.fechas[i0], D.fechas[i0]], y: [0, 0, 1, 1, 0], yaxis: "y4", fill: "toself",
+    fillcolor: "rgba(42,111,219,0.05)", line: { width: 0 }, mode: "lines", hoverinfo: "skip", showlegend: false, name: "_periodo" });
   const linea = (arr, extra) => Object.assign({ type: "scatter", mode: "lines" }, submuestra(arr, x, g), extra);
   const nomG = g === "W" ? " (semanal)" : g === "M" ? " (mensual)" : "";
   if (S.velas) t.push({ type: "candlestick", x: V.x, open: V.o, high: V.h, low: V.l, close: V.c, name: "Precio" + nomG, increasing: { line: { color: "#26a269", width: 1 } }, decreasing: { line: { color: "#d64545", width: 1 } }, hoverinfo: "x+y" });
@@ -571,34 +624,38 @@ function trazasPrecio(i0, i1) {
       customdata: rel.map(r => r == null ? "" : nf(1).format(r) + "× su media"), hovertemplate: "Volumen %{y:.3s}<br>%{customdata}<extra></extra>" });
     t.push({ type: "scatter", mode: "lines", x: V.x, y: media, name: "Volumen medio (20)", yaxis: "y2", line: { color: "#f39c12", width: 1.3 }, hoverinfo: "skip", showlegend: false });
   }
-  if (S.rsiPanel) t.push(linea(rsi(S.estrategia === "rsi" ? S.rsiN : 14), { name: "RSI", line: { color: C.azul, width: 1.2 }, yaxis: "y3", showlegend: false }));
+  if (S.rsiPanel) {
+    t.push(linea(rsi(S.estrategia === "rsi" ? S.rsiN : 14), { name: "RSI", line: { color: C.azul, width: 1.2 }, yaxis: "y3", showlegend: false }));
+    for (const [v, col] of [[S.estrategia === "rsi" ? S.rsiAlta : 70, C.rojo], [S.estrategia === "rsi" ? S.rsiBaja : 30, C.verde]])
+      t.push({ type: "scatter", mode: "lines", x: [D.fechas[0], D.fechas[N - 1]], y: [v, v], yaxis: "y3", line: { color: col, width: 1, dash: "dot" }, hoverinfo: "skip", showlegend: false });
+  }
   return t;
 }
 function formasNuestras(i0, i1) {
-  const f = [{ type: "rect", xref: "x", yref: "paper", x0: D.fechas[i0], x1: D.fechas[i1], y0: 0, y1: 1, fillcolor: "rgba(42,111,219,0.05)", line: { width: 0 }, layer: "below", editable: false, name: "_periodo" }];
+  const f = [];
   if (S.estrategia === "fijos") {
     f.push({ type: "line", xref: "paper", x0: 0, x1: 1, y0: S.compra, y1: S.compra, editable: true, name: "_compra", line: { color: C.verde, width: 2.5, dash: "dash" },
       label: { text: `◀ Compra ${fN(S.compra)}  (arrástrame)`, textposition: "start", font: { color: C.verde, size: 12 } } });
     f.push({ type: "line", xref: "paper", x0: 0, x1: 1, y0: S.venta, y1: S.venta, editable: true, name: "_venta", line: { color: C.rojo, width: 2.5, dash: "dash" },
       label: { text: `◀ Venta ${fN(S.venta)}  (arrástrame)`, textposition: "start", font: { color: C.rojo, size: 12 } } });
   }
-  if (S.rsiPanel) for (const [v, col] of [[S.estrategia === "rsi" ? S.rsiAlta : 70, C.rojo], [S.estrategia === "rsi" ? S.rsiBaja : 30, C.verde]])
-    f.push({ type: "line", xref: "paper", yref: "y3", x0: 0, x1: 1, y0: v, y1: v, line: { color: col, width: 1, dash: "dot" }, editable: false, name: "_rsi" });
   return f;
 }
 function pintarGrafico() {
   const [i0, i1] = periodo();
   const abajo = (S.rsiPanel ? 0.2 : 0) + (S.vol ? 0.2 : 0);
   const layout = {
-    uirevision: "fijo", margin: { l: 55, r: 15, t: 10, b: 30 }, hovermode: "x unified", dragmode: "zoom", showlegend: true,
+    uirevision: "fijo", margin: { l: 55, r: 15, t: 10, b: 30 }, hovermode: S.modo === "hline" ? false : "x unified",
+    dragmode: S.modo === "hline" ? false : S.modo, showlegend: true,
     legend: { orientation: "h", y: 1.06, x: 0, font: { size: 11 } }, plot_bgcolor: "#fff", paper_bgcolor: "rgba(0,0,0,0)",
     xaxis: { type: "date", rangeslider: { visible: false }, showspikes: true, spikemode: "across", spikethickness: 1, spikecolor: "#bbb" },
     yaxis: { domain: [abajo + (abajo ? 0.03 : 0), 1], type: S.log ? "log" : "linear", title: { text: D.moneda, font: { size: 11 } }, fixedrange: false, gridcolor: "#f0f0f0" },
     yaxis2: { domain: [S.rsiPanel ? 0.22 : 0, S.rsiPanel ? 0.4 : 0.18], showticklabels: true, tickformat: "~s", nticks: 3, tickfont: { size: 10 },
       gridcolor: "#f3f3f3", fixedrange: true, visible: S.vol, title: { text: "vol.", font: { size: 10 } } },
     yaxis3: { domain: [0, 0.18], range: [0, 100], tickvals: [30, 70], fixedrange: true, gridcolor: "#f0f0f0", visible: S.rsiPanel },
+    yaxis4: { overlaying: "y", range: [0, 1], fixedrange: true, visible: false },
     shapes: formasNuestras(i0, i1).concat(S.dibujos || []),
-    newshape: { line: { color: "#ff4b4b", width: 2 }, fillcolor: "rgba(255,75,75,0.12)" },
+    newshape: { line: { color: "#ff4b4b", width: 2.5 }, fillcolor: "rgba(255,75,75,0.12)", layer: "above" },
     font: { family: "Source Sans Pro, sans-serif", size: 12 },
   };
   if (enfocarPeriodo) { granularidad = elegirGranularidad(Math.max(0, i0 - 10), i1); ventana = calcularVentana(Math.max(0, i0 - 10), i1); }
@@ -606,8 +663,8 @@ function pintarGrafico() {
   layout.uirevision = "fijo";
   if (rangoX) layout.xaxis.range = rangoX.slice();
   if (rangoY) { layout.yaxis.range = rangoY.slice(); layout.yaxis.autorange = false; }
-  const config = { responsive: true, displaylogo: false, scrollZoom: true, locale: "es",
-    modeBarButtonsToAdd: ["drawline", "drawopenpath", "drawrect", "drawcircle", "eraseshape"], modeBarButtonsToRemove: ["select2d", "lasso2d", "autoScale2d"],
+  const config = { responsive: true, displaylogo: false, scrollZoom: true, locale: "es", edits: { shapePosition: true },
+    modeBarButtonsToRemove: ["select2d", "lasso2d", "autoScale2d", "zoom2d", "pan2d", "sendDataToCloud"],
     toImageButtonOptions: { filename: "simulador_" + D.ticker, scale: 2 } };
   pintando = true;
   const refit = enfocarPendiente;
@@ -615,7 +672,7 @@ function pintarGrafico() {
   Plotly.react(gd, trazasPrecio(i0, i1), layout, config).then(() => { pintando = false; registrarEventos(); if (refit) ajustarY(); });
   const fijos = S.estrategia === "fijos";
   $("ayuda").innerHTML = (fijos ? `💡 <b>Arrastra las líneas</b> <span class="etq-linea" style="border-color:${C.verde}"></span>compra y <span class="etq-linea" style="border-color:${C.rojo}"></span>venta (pincha la línea y muévela arriba o abajo): el resultado se recalcula al instante. ` : "") +
-    `Rueda del ratón o arrastrar en el gráfico = zoom; doble clic = ver todo. Con los iconos de arriba a la derecha puedes <b>dibujar</b> líneas de tendencia, trazos libres, rectángulos o círculos (se guardan para esta empresa) y descargar el gráfico. La zona sombreada azul es el periodo simulado.`;
+    `Rueda del ratón = zoom; doble clic = ver todo. La zona sombreada azul es el periodo simulado. Arriba a la derecha del gráfico puedes descargarlo como imagen.`;
 }
 let ultimaRevision = "fijo", enfocarPendiente = false, rangoX = null, rangoY = null;
 
@@ -656,7 +713,16 @@ function registrarEventos() {
         else cambioDibujos = true; }
       else if (k.startsWith("shapes")) cambioDibujos = true;
     }
-    if (cambioDibujos) { S.dibujos = (gd.layout.shapes || []).filter(s => !(s.name || "").startsWith("_")).map(s => JSON.parse(JSON.stringify(s))); guardar(); }
+    if (cambioDibujos) {
+      let reetiquetar = false;
+      S.dibujos = (gd.layout.shapes || []).filter(s => !(s.name || "").startsWith("_")).map(s => {
+        const c = JSON.parse(JSON.stringify(s));
+        if (c.name === "nivel") { const y = redondeo((+c.y0 + +c.y1) / 2); if (c.y0 !== y || c.y1 !== y || c.x0 !== 0 || c.x1 !== 1) reetiquetar = true;
+          Object.assign(c, { xref: "paper", x0: 0, x1: 1, y0: y, y1: y }); c.label = Object.assign({}, c.label, { text: fN(y) }); }
+        return c;
+      });
+      guardar(); if (reetiquetar) setTimeout(pintarGrafico, 0);
+    }
     if (cambioNivel) { actualizarInputsParams(); cambio(); }
   });
 }
@@ -891,7 +957,7 @@ function panelAnual(p) {
 // ---------------------------------------------------------------- arranque
 function iniciar() {
   if (typeof Plotly === "undefined") { document.body.innerHTML = "<p style='padding:20px'>No se pudo cargar la librería de gráficos. Recarga la página.</p>"; return; }
-  pintarParams(); pintarPestanas(); recalcular();
+  pintarParams(); pintarPestanas(); pintarHerramientas(); recalcular();
 }
 if (typeof Plotly === "undefined") {
   const s = document.createElement("script"); s.src = "__PLOTLY_FALLBACK__"; s.onload = iniciar; s.onerror = iniciar; document.head.appendChild(s);
