@@ -40,6 +40,12 @@
   .scroll { max-height:430px; overflow:auto; border:1px solid var(--borde); border-radius:10px; }
   details summary { cursor:pointer; font-weight:600; font-size:13px; color:#444; }
   .nota { font-size:12px; color:#777; margin-top:6px; }
+  .lect { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px; }
+  .lect > div { border-left:4px solid var(--gris); padding:4px 10px; font-size:13.5px; line-height:1.45; }
+  .lect .t { font-weight:700; font-size:13px; margin-bottom:2px; }
+  .lect .alc { border-color:var(--verde); } .lect .baj { border-color:var(--rojo); } .lect .neu { border-color:var(--ambar); }
+  .resumen-lect { margin-top:10px; padding:8px 12px; background:var(--fondo); border-radius:8px; font-size:13.5px; line-height:1.45; }
+  tr.hoy td { background:#fff6db; }
   .etq-linea { display:inline-block; width:22px; height:0; border-top:2px dashed; vertical-align:middle; margin-right:4px; }
 </style>
 </head>
@@ -73,6 +79,7 @@
 
   <div id="mensaje" class="mensaje info"></div>
   <div id="kpis" class="kpis"></div>
+  <div class="caja" id="lectura"></div>
 
   <div class="caja">
     <div class="fila" style="justify-content:space-between">
@@ -94,7 +101,7 @@
       <button class="btn" id="borrarDibujos">🧽 Borrar mis dibujos</button>
       <button class="btn" id="reset">↺ Restablecer todo</button>
     </div>
-    <div id="graf" style="height:600px; margin-top:6px"></div>
+    <div id="graf" style="height:660px; margin-top:6px"></div>
     <div class="ayuda" id="ayuda"></div>
   </div>
 
@@ -151,6 +158,24 @@ function desv(n) {
   for (let i = n - 1; i < N; i++) { let s = 0; for (let j = i - n + 1; j <= i; j++) s += (D.c[j] - m[i]) ** 2; out[i] = Math.sqrt(s / (n - 1)); }
   return cache[k] = out;
 }
+function bandas(n, k) {
+  const key = `boll_${n}_${k}`; if (cache[key]) return cache[key];
+  const m = sma(n), sd = desv(n);
+  return cache[key] = { m, sup: Float64Array.from(m, (v, i) => v + k * sd[i]), inf: Float64Array.from(m, (v, i) => v - k * sd[i]) };
+}
+function mediaMovil(arr, n) { // media de los n valores anteriores incluido el actual (para volumen agregado)
+  const out = new Array(arr.length).fill(null); let s = 0;
+  for (let i = 0; i < arr.length; i++) { s += (arr[i] || 0); if (i >= n) s -= (arr[i - n] || 0); if (i >= n - 1) out[i] = s / n; }
+  return out;
+}
+function volMedia(n = 20) { // media de volumen de las n sesiones ANTERIORES (sin hoy)
+  const k = `vm_${n}`; if (cache[k]) return cache[k];
+  const out = new Float64Array(N).fill(NaN); if (!D.v) return cache[k] = out;
+  let s = 0;
+  for (let i = 0; i < N; i++) { if (i >= n) { out[i] = s / n; s -= (D.v[i - n] || 0); } s += (D.v[i] || 0); }
+  return cache[k] = out;
+}
+function volRel(i) { const m = volMedia(20)[i]; return D.v && m > 0 ? (D.v[i] || 0) / m : NaN; }
 function rsi(n) {
   const k = `rsi_${n}`; if (cache[k]) return cache[k];
   const out = new Float64Array(N).fill(NaN); let g = 0, p = 0; const a = 1 / n;
@@ -224,6 +249,27 @@ const ESTRATEGIAS = {
       for (let i = 0; i < N; i++) { if (isFinite(r[i])) { b[i] = r[i] < p.rsiBaja; v[i] = r[i] > p.rsiAlta; } } return { buySig: b, sellSig: v }; },
     rejilla: () => ({ x: rango(55, 90, 5), y: rango(10, 45, 5), ex: "rsiAlta", ey: "rsiBaja", tx: "Vender si RSI >", ty: "Comprar si RSI <" }),
   },
+  bollinger: {
+    nombre: "🎢 Bollinger + tendencia + volumen",
+    desc: "Combina tres señales: las bandas de Bollinger para el momento de entrada, las medias de 50 y 200 como filtro de tendencia (solo compra si la de 50 está por encima de la de 200) y el volumen como confirmación (exige que ese día se negocie más de lo normal). Se opera al cierre.",
+    params: [["bollModo", "Entrada", "opciones", [["rebote", "Rebote: cierra bajo la banda inferior"], ["ruptura", "Ruptura: cierra sobre la banda superior"]]],
+      ["bollSalida", "Salida", "opciones", [["superior", "Al tocar la banda superior"], ["media", "Al cerrar bajo la media central"], ["tendencia", "Cuando la media 50 cruza bajo la 200"]]],
+      ["bollN", "Periodo de las bandas", "n"], ["bollK", "Anchura (desviaciones)", "dec"],
+      ["volMin", "Volumen mínimo (× su media; 0 = da igual)", "dec"], ["filtroTend", "Solo con tendencia alcista (media 50 > 200)", "check"]],
+    cfg: (p) => {
+      const b = bandas(p.bollN, p.bollK), s50 = sma(50), s200 = sma(200), compra = new Uint8Array(N), venta = new Uint8Array(N);
+      for (let i = 1; i < N; i++) {
+        const c = D.c[i]; if (!isFinite(b.sup[i])) continue;
+        const alcista = isFinite(s200[i]) && s50[i] > s200[i];
+        const entrada = p.bollModo === "ruptura" ? c >= b.sup[i] : c <= b.inf[i];
+        const vol = !(p.volMin > 0) || volRel(i) >= p.volMin;
+        compra[i] = entrada && vol && (!p.filtroTend || alcista);
+        venta[i] = p.bollSalida === "superior" ? c >= b.sup[i] : p.bollSalida === "media" ? c < b.m[i] : (isFinite(s200[i]) && s50[i] < s200[i]);
+      }
+      return { buySig: compra, sellSig: venta };
+    },
+    rejilla: () => ({ x: rango(1.5, 3, 0.25), y: rango(10, 40, 5), ex: "bollK", ey: "bollN", tx: "Anchura (desviaciones)", ty: "Periodo de las bandas" }),
+  },
   modelo: {
     nombre: "🧠 Señales del modelo",
     desc: "Compra cuando el precio entra en la zona de compra que calculaba el modelo en cada momento (solo con las cuentas publicadas entonces) y vende al llegar a su valor justo.",
@@ -244,7 +290,8 @@ function rango(a, b, paso) { const r = []; for (let x = a; x <= b + 1e-9; x += p
 const CLAVE = "simulador_v1_" + D.ticker;
 const DEF = Object.assign({
   estrategia: "fijos", compra: NaN, venta: NaN, caida: 0.2, ventana: 252, subida: 0.3, rapida: 50, lenta: 200,
-  rsiN: 14, rsiBaja: 30, rsiAlta: 70, dca: 300, capital: 10000, comision: 0.1, stop: 0, trailing: 0, objetivo: 0,
+  rsiN: 14, rsiBaja: 30, rsiAlta: 70, dca: 300, bollModo: "rebote", bollSalida: "superior", bollN: 20, bollK: 2, volMin: 0,
+  filtroTend: true, horizonte: 20, capital: 10000, comision: 0.1, stop: 0, trailing: 0, objetivo: 0,
   impuestos: 0, reinvertir: false, repetir: true, velas: true, log: false, m50: false, m200: false, boll: false,
   vol: true, rsiPanel: false, desde: null, hasta: null, pestana: "ops", dibujos: [],
 }, D.defectos || {});
@@ -252,6 +299,7 @@ let S = Object.assign({}, DEF);
 try { const g = JSON.parse(localStorage.getItem(CLAVE) || "null"); if (g) S = Object.assign(S, g); } catch (e) {}
 if (!isFinite(S.compra) || !isFinite(S.venta)) { S.compra = DEF.compra; S.venta = DEF.venta; }
 if (!ESTRATEGIAS[S.estrategia]) S.estrategia = "fijos";
+if (!["ops", "patrones", "comparar", "optimizar", "anual"].includes(S.pestana)) S.pestana = "ops";
 function guardar() { try { localStorage.setItem(CLAVE, JSON.stringify(S)); } catch (e) {} }
 
 function periodo() {
@@ -369,14 +417,25 @@ function pintarParams() {
   const e = ESTRATEGIAS[S.estrategia]; sel.value = S.estrategia;
   $("descripcion").textContent = e.noDisponible ? "⚠️ " + e.noDisponible : e.desc;
   const cont = $("params"); cont.innerHTML = "";
-  for (const [k, et, tipo] of e.params) {
+  for (const [k, et, tipo, opts] of e.params) {
     const d = document.createElement("div"); d.className = "ctl";
+    if (tipo === "opciones") {
+      d.style.minWidth = "230px";
+      d.innerHTML = `<label>${et}</label><select id="p_${k}">${opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select>`;
+      cont.appendChild(d); const s = $("p_" + k); s.value = S[k]; s.onchange = () => { S[k] = s.value; cambio(); };
+      continue;
+    }
+    if (tipo === "check") {
+      const l = document.createElement("label"); l.className = "chk"; l.innerHTML = `<input type="checkbox" id="p_${k}"> ${et}`;
+      cont.appendChild(l); const c = $("p_" + k); c.checked = !!S[k]; c.onchange = () => { S[k] = c.checked; cambio(); };
+      continue;
+    }
     if (tipo === "ventana") {
       d.innerHTML = `<label>${et}</label><select id="p_${k}">${VENTANAS.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select>`;
       cont.appendChild(d); const s = $("p_" + k); s.value = S[k]; s.onchange = () => { S[k] = +s.value; cambio(); };
       continue;
     }
-    const pct = tipo === "pct", paso = tipo === "precio" ? pasoPrecio() : pct ? 1 : tipo === "dinero" ? 50 : 1;
+    const pct = tipo === "pct", paso = tipo === "precio" ? pasoPrecio() : pct ? 1 : tipo === "dinero" ? 50 : tipo === "dec" ? 0.1 : 1;
     const etq = tipo === "precio" ? `${et} (${D.moneda})` : tipo === "dinero" ? `${et} (${D.moneda})` : et;
     d.innerHTML = `<label>${etq}</label><input type="number" id="p_${k}" step="${paso}" min="0">`;
     cont.appendChild(d);
@@ -386,14 +445,15 @@ function pintarParams() {
 }
 function pasoPrecio() { const p = D.c[N - 1]; return p >= 1000 ? 5 : p >= 100 ? 1 : p >= 10 ? 0.1 : 0.01; }
 function actualizarInputsParams() {
-  for (const [k, , tipo] of ESTRATEGIAS[S.estrategia].params) { const i = $("p_" + k); if (i && document.activeElement !== i) i.value = tipo === "pct" ? +(S[k] * 100).toFixed(2) : S[k]; }
+  for (const [k, , tipo] of ESTRATEGIAS[S.estrategia].params) { const i = $("p_" + k); if (!i || document.activeElement === i) continue;
+    if (tipo === "check") i.checked = !!S[k]; else i.value = tipo === "pct" ? +(S[k] * 100).toFixed(2) : S[k]; }
 }
 sel.onchange = () => { S.estrategia = sel.value; pintarParams(); cambio(); };
 
 const comunes = ["capital", "comision", "stop", "trailing", "objetivo", "impuestos"];
 for (const k of comunes) { const i = $(k); i.value = S[k]; i.oninput = () => { const v = parseFloat(i.value); if (isFinite(v)) { S[k] = v; cambio(); } }; }
 for (const k of ["reinvertir", "repetir"]) { const i = $(k); i.checked = S[k]; i.onchange = () => { S[k] = i.checked; cambio(); }; }
-for (const k of ["velas", "log", "m50", "m200", "boll", "vol", "rsiPanel"]) { const i = $(k); i.checked = S[k]; i.onchange = () => { S[k] = i.checked; guardar(); if (k === "log") { const r = gd.layout.xaxis.range; enfocarPeriodo = true; pintarGrafico(); } else pintarGrafico(); }; }
+for (const k of ["velas", "log", "m50", "m200", "boll", "vol", "rsiPanel"]) { const i = $(k); i.checked = S[k]; i.onchange = () => { S[k] = i.checked; guardar(); if (k === "log") { rangoY = null; enfocarPendiente = true; pintarGrafico(); } else pintarGrafico(); }; }
 
 const PERIODOS = [["1A", 1], ["3A", 3], ["5A", 5], ["10A", 10], ["Todo", 0]];
 for (const [et, a] of PERIODOS) {
@@ -421,7 +481,7 @@ function recalcular() {
   $("desde").value = D.fechas[i0]; $("hasta").value = D.fechas[i1];
   const e = ESTRATEGIAS[S.estrategia];
   R = e.noDisponible ? null : ejecutar(S.estrategia, S, i0, i1, opciones());
-  pintarKpis(); pintarGrafico(); pintarCapital(); pintarPanel();
+  pintarKpis(); pintarLectura(); pintarGrafico(); pintarCapital(); pintarPanel();
 }
 
 function kpi(et, val, sub, cls = "") { return `<div class="kpi"><div class="et">${et}</div><div class="val ${cls}">${val}</div><div class="sub">${sub || ""}</div></div>`; }
@@ -478,11 +538,13 @@ function trazasPrecio(i0, i1) {
   const nomG = g === "W" ? " (semanal)" : g === "M" ? " (mensual)" : "";
   if (S.velas) t.push({ type: "candlestick", x: V.x, open: V.o, high: V.h, low: V.l, close: V.c, name: "Precio" + nomG, increasing: { line: { color: "#26a269", width: 1 } }, decreasing: { line: { color: "#d64545", width: 1 } }, hoverinfo: "x+y" });
   else t.push({ type: "scatter", mode: "lines", x: V.x, y: V.c, name: "Precio" + nomG, line: { color: "#444", width: 1.4 } });
-  if (S.m50) t.push(linea(sma(50), { name: "Media 50", line: { color: "#f39c12", width: 1.2 } }));
-  if (S.m200) t.push(linea(sma(200), { name: "Media 200", line: { color: "#8e44ad", width: 1.4 } }));
-  if (S.boll) { const m = sma(20), s = desv(20);
-    t.push(linea(Float64Array.from(m, (v, i) => v + 2 * s[i]), { name: "Bollinger", line: { color: C.gris, width: 0.8, dash: "dot" } }));
-    t.push(linea(Float64Array.from(m, (v, i) => v - 2 * s[i]), { name: "Bollinger inf.", showlegend: false, line: { color: C.gris, width: 0.8, dash: "dot" } })); }
+  const esBoll = S.estrategia === "bollinger";
+  if (S.m50 || (esBoll && S.filtroTend)) t.push(linea(sma(50), { name: "Media 50", line: { color: "#f39c12", width: 1.3 } }));
+  if (S.m200 || (esBoll && S.filtroTend)) t.push(linea(sma(200), { name: "Media 200", line: { color: "#8e44ad", width: 1.5 } }));
+  if (S.boll || esBoll) { const b = bandas(S.bollN, S.bollK);
+    t.push(linea(b.sup, { name: `Bollinger (${S.bollN}, ${S.bollK})`, line: { color: "#6b7a99", width: 1, dash: "dot" } }));
+    t.push(linea(b.inf, { name: "Bollinger inf.", showlegend: false, line: { color: "#6b7a99", width: 1, dash: "dot" }, fill: "tonexty", fillcolor: "rgba(107,122,153,0.06)" }));
+    if (esBoll) t.push(linea(b.m, { name: "Media central", line: { color: "#6b7a99", width: 0.8 } })); }
   if (S.estrategia === "medias") { t.push(linea(sma(S.rapida), { name: `Media ${S.rapida}`, line: { color: C.verde, width: 1.4 } }));
     t.push(linea(sma(S.lenta), { name: `Media ${S.lenta}`, line: { color: C.rojo, width: 1.4 } })); }
   if (S.estrategia === "caida") { const b = ESTRATEGIAS.caida.cfg(S).buyLevel;
@@ -497,7 +559,18 @@ function trazasPrecio(i0, i1) {
     if (vts.length) t.push({ type: "scatter", mode: "markers", x: vts.map(v => x[v[0]]), y: vts.map(v => v[1]), name: "Venta", text: vts.map(v => v[2]),
       marker: { symbol: "triangle-down", size: 13, color: C.rojo, line: { color: "#fff", width: 1 } }, hovertemplate: "%{text} %{x}<br>%{y:.2f}<extra></extra>" });
   }
-  if (S.vol && D.v) t.push({ type: "bar", x: V.x, y: V.v, name: "Volumen", marker: { color: "rgba(138,147,163,0.35)" }, yaxis: "y2", showlegend: false, hoverinfo: "skip" });
+  if (S.vol && D.v) {
+    // Barras verdes/rojas según el día (o semana/mes) cierre al alza o a la baja; intensas si el volumen es alto
+    let media;
+    if (g === "D") { const vm = volMedia(20); media = Array.from(vm.slice(ventana[0], ventana[1] + 1)); }
+    else media = mediaMovil(V.v, 20).map((m, i, a) => i > 0 ? a[i - 1] : null);
+    const rel = V.v.map((v, i) => media[i] > 0 ? v / media[i] : null);
+    const colores = V.v.map((_, i) => { const sube = V.c[i] >= V.o[i], fuerte = rel[i] >= 1.5;
+      return sube ? (fuerte ? "rgba(26,158,92,0.95)" : "rgba(26,158,92,0.38)") : (fuerte ? "rgba(214,69,69,0.95)" : "rgba(214,69,69,0.38)"); });
+    t.push({ type: "bar", x: V.x, y: V.v, name: "Volumen", marker: { color: colores, line: { width: 0 } }, yaxis: "y2", showlegend: false,
+      customdata: rel.map(r => r == null ? "" : nf(1).format(r) + "× su media"), hovertemplate: "Volumen %{y:.3s}<br>%{customdata}<extra></extra>" });
+    t.push({ type: "scatter", mode: "lines", x: V.x, y: media, name: "Volumen medio (20)", yaxis: "y2", line: { color: "#f39c12", width: 1.3 }, hoverinfo: "skip", showlegend: false });
+  }
   if (S.rsiPanel) t.push(linea(rsi(S.estrategia === "rsi" ? S.rsiN : 14), { name: "RSI", line: { color: C.azul, width: 1.2 }, yaxis: "y3", showlegend: false }));
   return t;
 }
@@ -515,21 +588,24 @@ function formasNuestras(i0, i1) {
 }
 function pintarGrafico() {
   const [i0, i1] = periodo();
-  const abajo = (S.rsiPanel ? 0.2 : 0) + (S.vol ? 0.12 : 0);
+  const abajo = (S.rsiPanel ? 0.2 : 0) + (S.vol ? 0.2 : 0);
   const layout = {
     uirevision: "fijo", margin: { l: 55, r: 15, t: 10, b: 30 }, hovermode: "x unified", dragmode: "zoom", showlegend: true,
     legend: { orientation: "h", y: 1.06, x: 0, font: { size: 11 } }, plot_bgcolor: "#fff", paper_bgcolor: "rgba(0,0,0,0)",
     xaxis: { type: "date", rangeslider: { visible: false }, showspikes: true, spikemode: "across", spikethickness: 1, spikecolor: "#bbb" },
     yaxis: { domain: [abajo + (abajo ? 0.03 : 0), 1], type: S.log ? "log" : "linear", title: { text: D.moneda, font: { size: 11 } }, fixedrange: false, gridcolor: "#f0f0f0" },
-    yaxis2: { domain: [S.rsiPanel ? 0.22 : 0, S.rsiPanel ? 0.32 : 0.12], showticklabels: false, showgrid: false, fixedrange: true, visible: S.vol },
+    yaxis2: { domain: [S.rsiPanel ? 0.22 : 0, S.rsiPanel ? 0.4 : 0.18], showticklabels: true, tickformat: "~s", nticks: 3, tickfont: { size: 10 },
+      gridcolor: "#f3f3f3", fixedrange: true, visible: S.vol, title: { text: "vol.", font: { size: 10 } } },
     yaxis3: { domain: [0, 0.18], range: [0, 100], tickvals: [30, 70], fixedrange: true, gridcolor: "#f0f0f0", visible: S.rsiPanel },
     shapes: formasNuestras(i0, i1).concat(S.dibujos || []),
     newshape: { line: { color: "#ff4b4b", width: 2 }, fillcolor: "rgba(255,75,75,0.12)" },
     font: { family: "Source Sans Pro, sans-serif", size: 12 },
   };
   if (enfocarPeriodo) { granularidad = elegirGranularidad(Math.max(0, i0 - 10), i1); ventana = calcularVentana(Math.max(0, i0 - 10), i1); }
-  if (enfocarPeriodo) { layout.xaxis.range = [D.fechas[Math.max(0, i0 - 10)], D.fechas[i1]]; layout.uirevision = "p" + i0 + "_" + i1 + "_" + (S.log ? "l" : "n"); enfocarPeriodo = false; enfocarPendiente = true; ultimaRevision = layout.uirevision; }
-  else layout.uirevision = ultimaRevision;
+  if (enfocarPeriodo) { rangoX = [D.fechas[Math.max(0, i0 - 10)], D.fechas[i1]]; rangoY = null; enfocarPeriodo = false; enfocarPendiente = true; }
+  layout.uirevision = "fijo";
+  if (rangoX) layout.xaxis.range = rangoX.slice();
+  if (rangoY) { layout.yaxis.range = rangoY.slice(); layout.yaxis.autorange = false; }
   const config = { responsive: true, displaylogo: false, scrollZoom: true, locale: "es",
     modeBarButtonsToAdd: ["drawline", "drawopenpath", "drawrect", "drawcircle", "eraseshape"], modeBarButtonsToRemove: ["select2d", "lasso2d", "autoScale2d"],
     toImageButtonOptions: { filename: "simulador_" + D.ticker, scale: 2 } };
@@ -541,7 +617,7 @@ function pintarGrafico() {
   $("ayuda").innerHTML = (fijos ? `💡 <b>Arrastra las líneas</b> <span class="etq-linea" style="border-color:${C.verde}"></span>compra y <span class="etq-linea" style="border-color:${C.rojo}"></span>venta (pincha la línea y muévela arriba o abajo): el resultado se recalcula al instante. ` : "") +
     `Rueda del ratón o arrastrar en el gráfico = zoom; doble clic = ver todo. Con los iconos de arriba a la derecha puedes <b>dibujar</b> líneas de tendencia, trazos libres, rectángulos o círculos (se guardan para esta empresa) y descargar el gráfico. La zona sombreada azul es el periodo simulado.`;
 }
-let ultimaRevision = "fijo", enfocarPendiente = false;
+let ultimaRevision = "fijo", enfocarPendiente = false, rangoX = null, rangoY = null;
 
 // Ajusta el eje vertical a lo que se ve (Plotly no lo hace solo al hacer zoom en fechas)
 let ajustandoY = false;
@@ -554,7 +630,7 @@ function ajustarY() {
   if (!isFinite(lo) || !isFinite(hi)) return;
   const m = (hi - lo) * 0.06;
   const rango = S.log ? [Math.log10(Math.max(lo * 0.95, 1e-6)), Math.log10(hi * 1.05)] : [Math.max(0, lo - m), hi + m];
-  ajustandoY = true;
+  ajustandoY = true; rangoY = rango;
   Plotly.relayout(gd, { "yaxis.range": rango }).then(() => { ajustandoY = false; });
 }
 let eventosOk = false;
@@ -562,8 +638,10 @@ function registrarEventos() {
   if (eventosOk || !gd.on) return; eventosOk = true;
   gd.on("plotly_relayout", (ev) => {
     if (pintando || ajustandoY) return;
+    if (Object.keys(ev).some(k => k.startsWith("yaxis.range"))) rangoY = gd.layout.yaxis.range.slice();
+    if (ev["yaxis.autorange"]) rangoY = null;
     if (Object.keys(ev).some(k => k.startsWith("xaxis.range") || k === "xaxis.autorange")) {
-      const r = gd.layout.xaxis.range;
+      const r = gd.layout.xaxis.range; rangoX = r ? [String(r[0]), String(r[1])] : null;
       const a = r ? indiceFecha(String(r[0]).slice(0, 10)) : 0, b = r ? indiceFecha(String(r[1]).slice(0, 10)) : N - 1;
       const nueva = r ? elegirGranularidad(a, b) : "M";
       const fuera = nueva === "D" && (a < ventana[0] || b > ventana[1]);
@@ -603,8 +681,108 @@ function pintarCapital() {
     { responsive: true, displaylogo: false, locale: "es" });
 }
 
+// ---------------------------------------------------------------- lectura del gráfico y patrones
+const fechaEs = (i) => { const [a, m, d] = D.fechas[i].split("-"); return `${d}/${m}/${a}`; };
+const tendAlc = (i) => { const b = sma(200)[i]; return isFinite(b) && sma(50)[i] > b; };
+const tendBaj = (i) => { const b = sma(200)[i]; return isFinite(b) && sma(50)[i] < b; };
+function ultimoCruce(L) {
+  const a = sma(50), b = sma(200), arriba = a[L] > b[L];
+  for (let i = L; i > 0; i--) { if (!isFinite(b[i - 1])) return null; if ((a[i - 1] > b[i - 1]) !== arriba) return i; }
+  return null;
+}
+function patrones() {
+  const b = bandas(S.bollN, S.bollK);
+  const sup = (i) => D.c[i] > b.sup[i], inf = (i) => D.c[i] < b.inf[i], va = (i) => volRel(i) >= 1.5;
+  const cruce = (f) => (i) => i > 0 && isFinite(sma(200)[i - 1]) && f(i) && !f(i - 1);
+  return [
+    { id: "sup_alc_vol", nombre: "Supera la banda superior · tendencia alcista · volumen alto", fn: (i) => sup(i) && tendAlc(i) && va(i) },
+    { id: "sup_alc", nombre: "Supera la banda superior · tendencia alcista", fn: (i) => sup(i) && tendAlc(i) },
+    { id: "sup_baj", nombre: "Supera la banda superior · tendencia bajista", fn: (i) => sup(i) && tendBaj(i) },
+    { id: "inf_alc_vol", nombre: "Cae bajo la banda inferior · tendencia alcista · volumen alto", fn: (i) => inf(i) && tendAlc(i) && va(i) },
+    { id: "inf_alc", nombre: "Cae bajo la banda inferior · tendencia alcista", fn: (i) => inf(i) && tendAlc(i) },
+    { id: "inf_baj", nombre: "Cae bajo la banda inferior · tendencia bajista", fn: (i) => inf(i) && tendBaj(i) },
+    { id: "dorado", nombre: "Cruce dorado (la media 50 cruza sobre la 200)", fn: cruce(tendAlc) },
+    { id: "muerte", nombre: "Cruce de la muerte (la media 50 cruza bajo la 200)", fn: cruce(tendBaj) },
+  ];
+}
+function resumirRent(rs) {
+  if (!rs.length) return { n: 0 };
+  rs.sort((a, b) => a - b);
+  return { n: rs.length, sube: rs.filter(r => r > 0).length / rs.length, media: rs.reduce((a, b) => a + b, 0) / rs.length,
+    mediana: rs[Math.floor(rs.length / 2)], peor: rs[0], mejor: rs[rs.length - 1] };
+}
+function estadisticaPatron(fn, h) { // cada episodio cuenta una sola vez (su primer día)
+  const rs = []; let prev = false;
+  for (let i = 1; i < N; i++) { const ok = fn(i); if (ok && !prev && i + h < N) rs.push(D.c[i + h] / D.c[i] - 1); prev = ok; }
+  return resumirRent(rs);
+}
+function estadisticaBase(h) { const rs = []; for (let i = Math.min(200, N - 1); i + h < N; i++) rs.push(D.c[i + h] / D.c[i] - 1); return resumirRent(rs); }
+function situacionHoy() { const L = N - 1; return patrones().find(p => p.fn(L)) || null; }
+
+function pintarLectura() {
+  const L = N - 1, c = D.c[L], b = bandas(S.bollN, S.bollK), s50 = sma(50)[L], s200 = sma(200)[L];
+  if (!isFinite(b.sup[L])) { $("lectura").style.display = "none"; return; }
+  $("lectura").style.display = "";
+  const pctB = (c - b.inf[L]) / (b.sup[L] - b.inf[L]);
+  const anchos = []; for (let i = Math.max(0, L - 126); i <= L; i++) if (isFinite(b.sup[i])) anchos.push((b.sup[i] - b.inf[i]) / b.m[i]);
+  const anchoHoy = (b.sup[L] - b.inf[L]) / b.m[L], pctAncho = anchos.filter(a => a < anchoHoy).length / anchos.length;
+  let tB, cB;
+  if (c > b.sup[L]) { cB = "baj"; tB = `Cierra <b>por encima de la banda superior</b> (${fN(b.sup[L])}): sobrecompra a corto plazo. Suele corregir hacia la media central (${fN(b.m[L])}), aunque en tendencias fuertes el precio puede seguir «caminando» pegado a la banda.`; }
+  else if (c < b.inf[L]) { cB = "alc"; tB = `Cierra <b>por debajo de la banda inferior</b> (${fN(b.inf[L])}): sobreventa a corto plazo; a menudo rebota hacia la media central (${fN(b.m[L])}).`; }
+  else { cB = "neu"; tB = `Está en la <b>mitad ${pctB > 0.5 ? "superior" : "inferior"}</b> de las bandas: al ${fP(pctB, 0)} del recorrido entre la inferior (${fN(b.inf[L])}) y la superior (${fN(b.sup[L])}).`; }
+  if (pctAncho <= 0.15) tB += ` Las bandas están <b>muy estrechas</b> (de las más estrechas de los últimos 6 meses): suele anticipar un movimiento fuerte, en cualquier dirección.`;
+  else if (pctAncho >= 0.9) tB += ` Las bandas están muy abiertas: volatilidad alta.`;
+  let tT, cT; const cr = ultimoCruce(L);
+  if (!isFinite(s200)) { cT = "neu"; tT = "No hay histórico suficiente para la media de 200."; }
+  else if (s50 > s200) { cT = "alc"; tT = `<b>Alcista</b>: la media de 50 (${fN(s50)}) está por encima de la de 200 (${fN(s200)})${cr != null ? ` desde el ${fechaEs(cr)} (cruce dorado)` : ""}. El precio está un ${fP(Math.abs(c / s200 - 1))} ${c >= s200 ? "por encima" : "por debajo"} de la media de 200.`; }
+  else { cT = "baj"; tT = `<b>Bajista</b>: la media de 50 (${fN(s50)}) está por debajo de la de 200 (${fN(s200)})${cr != null ? ` desde el ${fechaEs(cr)} (cruce de la muerte)` : ""}. El precio está un ${fP(Math.abs(c / s200 - 1))} ${c >= s200 ? "por encima" : "por debajo"} de la media de 200.`; }
+  let tV = "Yahoo no da volumen para este valor.", cV = "neu";
+  if (D.v && D.v[L] != null) {
+    const r = volRel(L); let su = 0, ba = 0;
+    for (let i = Math.max(1, L - 9); i <= L; i++) { const v = D.v[i] || 0; if (D.c[i] >= D.c[i - 1]) su += v; else ba += v; }
+    const ratio = ba > 0 ? su / ba : Infinity;
+    tV = `En la última sesión se negoció <b>${fN(r, 1)} veces</b> su volumen medio de 20 sesiones (${r >= 1.5 ? "<b>alto</b>" : r <= 0.7 ? "bajo" : "normal"}). En las últimas 10 sesiones, el volumen de los días de subida fue ${isFinite(ratio) ? fN(ratio, 1) + " veces" : "muy superior a"} el de los días de bajada: ${ratio >= 1.2 ? "<b>presión compradora</b>" : ratio <= 0.8 ? "<b>presión vendedora</b>" : "equilibrio"}.`;
+    cV = ratio >= 1.2 ? "alc" : ratio <= 0.8 ? "baj" : "neu";
+  }
+  const sit = situacionHoy(), h = S.horizonte;
+  let resumen = "";
+  if (sit) { const est = estadisticaPatron(sit.fn, h), bs = estadisticaBase(h);
+    if (est.n >= 3) resumen = `📐 Situación actual: <b>${sit.nombre.toLowerCase()}</b>. En el histórico de esta acción ha pasado <b>${est.n} veces</b>: ${h} sesiones después el precio estaba más alto el <b>${fP(est.sube, 0)}</b> de las veces (rentabilidad media ${fP(est.media)}), frente al ${fP(bs.sube, 0)} de un día cualquiera.${est.n < 10 ? " Son pocos casos: tómalo con cautela." : ""} Detalle en la pestaña «📐 Patrones».`;
+    else resumen = `📐 Situación actual: <b>${sit.nombre.toLowerCase()}</b>. Ha pasado muy pocas veces en el histórico de esta acción como para sacar conclusiones.`; }
+  $("lectura").innerHTML = `<div class="titcaja">🔎 Qué dice el gráfico hoy (${fechaEs(L)})</div>
+    <div class="lect"><div class="${cB}"><div class="t">Bandas de Bollinger (${S.bollN}, ${S.bollK})</div>${tB}</div>
+    <div class="${cT}"><div class="t">Tendencia (medias de 50 y 200)</div>${tT}</div>
+    <div class="${cV}"><div class="t">Volumen</div>${tV}</div></div>
+    ${resumen ? `<div class="resumen-lect">${resumen}</div>` : ""}<div class="nota">Lectura automática y descriptiva del gráfico, no una recomendación.</div>`;
+}
+
+function panelPatrones(p) {
+  const h = S.horizonte, ps = patrones(), bs = estadisticaBase(h), hoy = situacionHoy();
+  const filas = ps.map(x => Object.assign({ x }, estadisticaPatron(x.fn, h)));
+  p.innerHTML = `<div class="fila" style="margin-bottom:8px"><div class="ctl"><label>Mirar la rentabilidad</label><select id="horiz">
+      ${[[5, "1 semana después"], [10, "2 semanas después"], [20, "1 mes después"], [60, "3 meses después"], [120, "6 meses después"]].map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select></div>
+      <div class="nota" style="max-width:640px">Busca en <b>todo el histórico</b> de esta acción cada vez que se dio la situación (cada episodio cuenta una vez, en su primer día) y mira qué hizo el precio después. Bandas de Bollinger (${S.bollN}, ${S.bollK}); volumen alto = 1,5 veces su media de 20 sesiones.</div></div>
+    <div class="scroll"><table><thead><tr><th>Situación</th><th>Veces</th><th>Subió después</th><th>Rent. media</th><th>Mediana</th><th>Peor</th><th>Mejor</th></tr></thead><tbody>
+    ${filas.map(f => `<tr class="${hoy && hoy.id === f.x.id ? "hoy" : ""}"><td>${hoy && hoy.id === f.x.id ? "👉 " : ""}${f.x.nombre}</td><td>${f.n}${f.n > 0 && f.n < 10 ? " ⚠️" : ""}</td>
+      <td class="${f.n ? clase(f.sube - bs.sube) : ""}">${f.n ? fP(f.sube, 0) : "—"}</td><td class="${f.n ? clase(f.media) : ""}">${f.n ? fP(f.media) : "—"}</td>
+      <td>${f.n ? fP(f.mediana) : "—"}</td><td>${f.n ? fP(f.peor) : "—"}</td><td>${f.n ? fP(f.mejor) : "—"}</td></tr>`).join("")}
+    <tr style="font-style:italic"><td>Un día cualquiera (referencia)</td><td>${bs.n}</td><td>${fP(bs.sube, 0)}</td><td>${fP(bs.media)}</td><td>${fP(bs.mediana)}</td><td>${fP(bs.peor)}</td><td>${fP(bs.mejor)}</td></tr>
+    </tbody></table></div>
+    <div id="grafPatrones" style="height:340px; margin-top:10px"></div>
+    <div class="nota">👉 = la situación de hoy. ⚠️ = menos de 10 casos, poco fiable. En verde, las situaciones tras las que el precio subió más a menudo que un día cualquiera. El pasado no garantiza el futuro.</div>`;
+  $("horiz").value = h; $("horiz").onchange = () => { S.horizonte = +$("horiz").value; guardar(); panelPatrones(p); pintarLectura(); };
+  const vis = filas.filter(f => f.n > 0);
+  Plotly.newPlot("grafPatrones", [{ type: "bar", orientation: "h", y: vis.map(f => f.x.nombre.replace(" · ", "<br>")), x: vis.map(f => f.sube),
+    marker: { color: vis.map(f => f.sube > bs.sube ? C.verde : C.rojo) }, text: vis.map(f => `${fP(f.sube, 0)} (${f.n})`), textposition: "outside", hoverinfo: "skip" }],
+    { margin: { l: 10, r: 40, t: 40, b: 30 }, xaxis: { tickformat: ".0%", range: [0, 1.12] }, yaxis: { automargin: true, autorange: "reversed", tickfont: { size: 11 } },
+      shapes: [{ type: "line", x0: bs.sube, x1: bs.sube, yref: "paper", y0: 0, y1: 1, line: { color: "#222", dash: "dash", width: 1.5 } }],
+      annotations: [{ x: bs.sube, y: 1.04, yref: "paper", text: `día cualquiera: ${fP(bs.sube, 0)}`, showarrow: false, font: { size: 11 } }],
+      title: { text: `% de veces que el precio estaba más alto ${h} sesiones después (entre paréntesis, nº de casos)`, font: { size: 13 } },
+      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "#fff", font: { family: "Source Sans Pro, sans-serif", size: 12 } }, { responsive: true, displaylogo: false });
+}
+
 // ---------------------------------------------------------------- paneles inferiores
-const PESTANAS = [["ops", "📋 Operaciones"], ["comparar", "🏁 Comparar estrategias"], ["optimizar", "🔥 Optimizar (mapa de calor)"], ["anual", "📆 Año a año"]];
+const PESTANAS = [["ops", "📋 Operaciones"], ["patrones", "📐 Patrones"], ["comparar", "🏁 Comparar estrategias"], ["optimizar", "🔥 Optimizar (mapa de calor)"], ["anual", "📆 Año a año"]];
 function pintarPestanas() {
   $("pestanas").innerHTML = PESTANAS.map(([k, t]) => `<div class="pestana ${S.pestana === k ? "activa" : ""}" data-k="${k}">${t}</div>`).join("");
   document.querySelectorAll(".pestana").forEach(el => el.onclick = () => { S.pestana = el.dataset.k; guardar(); pintarPestanas(); pintarPanel(); });
@@ -612,7 +790,7 @@ function pintarPestanas() {
 function pintarPanel() {
   const p = $("panel");
   if (!R) { p.innerHTML = ""; return; }
-  ({ ops: panelOps, comparar: panelComparar, optimizar: panelOptimizar, anual: panelAnual })[S.pestana](p);
+  ({ ops: panelOps, patrones: panelPatrones, comparar: panelComparar, optimizar: panelOptimizar, anual: panelAnual })[S.pestana](p);
 }
 function panelOps(p) {
   const ops = R.r.ops;
@@ -624,7 +802,7 @@ function panelOps(p) {
     <div class="nota">Pincha una fila para verla en el gráfico. ${R.r.abierta ? "La última operación sigue abierta y se valora al último cierre." : ""}</div>`;
   p.querySelectorAll("tr.click").forEach(tr => tr.onclick = () => {
     const t = ops[+tr.dataset.k], a = Math.max(0, t.compra - 40), b = Math.min(N - 1, (t.venta != null ? t.venta : R.r.i1) + 40);
-    Plotly.relayout(gd, { "xaxis.range": [D.fechas[a], D.fechas[b]], "yaxis.autorange": true }); gd.scrollIntoView({ behavior: "smooth", block: "center" });
+    Plotly.relayout(gd, { "xaxis.range": [D.fechas[a], D.fechas[b]] }); gd.scrollIntoView({ behavior: "smooth", block: "center" });
   });
 }
 function panelComparar(p) {
@@ -674,9 +852,10 @@ function panelOptimizar(p) {
       title: { text: `Verde = mejor que comprar y mantener (${fP(bhA.anual)} anual)${S.validar ? " · en el 70% inicial" : ""}`, font: { size: 13 } }, showlegend: false,
       paper_bgcolor: "rgba(0,0,0,0)", font: { family: "Source Sans Pro, sans-serif", size: 12 } }, { responsive: true, displaylogo: false });
   $("heat").on("plotly_click", (ev) => { const pt = ev.points[0]; if (pt.z == null) return; S[g.ex] = pt.x; S[g.ey] = pt.y; actualizarInputsParams(); cambio(); });
+  const fv = (v) => g.pct ? fP(v, 1) : Number.isInteger(v) ? fN(v, 0) : fN(v);
   let html = `<div class="nota">👆 <b>Pincha una casilla</b> para aplicar esos parámetros. ★ = la mejor combinación; ◯ = la actual.</div>`;
   if (mejor.x != null) {
-    html += `<div class="mensaje info" style="margin-top:8px">La mejor combinación fue <b>${g.ty.toLowerCase()} ${g.pct ? fP(mejor.y, 1) : fN(mejor.y)}</b> y <b>${g.tx.toLowerCase()} ${g.pct ? fP(mejor.x, 1) : fN(mejor.x)}</b>: ${fP(mejor.v)} anual frente a ${fP(bhA.anual)} de comprar y mantener.`;
+    html += `<div class="mensaje info" style="margin-top:8px">La mejor combinación fue <b>${g.ty.toLowerCase()} ${fv(mejor.y)}</b> y <b>${g.tx.toLowerCase()} ${fv(mejor.x)}</b>: ${fP(mejor.v)} anual frente a ${fP(bhA.anual)} de comprar y mantener.`;
     if (S.validar) {
       const prm = Object.assign({}, S, { [g.ex]: mejor.x, [g.ey]: mejor.y });
       const fuera = metricas(simular(e.cfg(prm), corte + 1, i1, op)), bhF = metricas(comprarMantener(corte + 1, i1, op));
