@@ -9,6 +9,6 @@ st.set_page_config(page_title="Analizador de empresas", page_icon="📊", layout
 paginas = [
     st.Page("vistas/empresa.py", title="Analizar empresa", icon="🔎", default=True),
     st.Page("vistas/escaner.py", title="Escáner", icon="📡"),
-    st.Page("vistas/backtest.py", title="Backtest", icon="🧪"),
+    st.Page("vistas/backtest.py", title="Backtest del modelo", icon="🧪"),
 ]
 st.navigation(paginas).run()

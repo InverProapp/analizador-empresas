@@ -38,7 +38,7 @@ Usa el buscador por nombre o escribe el ticker de Yahoo Finance:
 
 ## Secciones
 
-- **Analizar empresa**: veredicto, valoración (DCF, Graham), histórico de múltiplos, competidores, finanzas, técnico y dividendos.
+- **Analizar empresa**: veredicto, valoración (DCF, Graham), simulador de operaciones (tus precios de compra/venta o las señales del modelo), histórico de múltiplos, competidores, finanzas, técnico y dividendos.
 - **Escáner**: IBEX 35, Euro Stoxx 50, Dow Jones 30, Nasdaq 100 o tu lista; ranking y filtro de "zona de compra".
 - **Backtest**: puntúa cada empresa en fechas pasadas con la información de entonces y mide la rentabilidad de los 12 meses siguientes.
 
