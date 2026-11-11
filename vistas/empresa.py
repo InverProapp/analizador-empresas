@@ -118,9 +118,14 @@ if e.errores:
 # ---------------------------------------------------------------------------
 # Pestañas
 # ---------------------------------------------------------------------------
-tabs = st.tabs(["🧭 Resumen", "💶 Valoración", "🕰️ Histórico", "🆚 Competidores", "🤖 Análisis IA",
-                "📈 Finanzas", "📉 Técnico", "💸 Dividendos", "📘 Metodología"])
-T_RES, T_VAL, T_HIS, T_COMP, T_IA, T_FIN, T_TEC, T_DIV, T_MET = tabs
+# Análisis con IA desactivado de momento: pon MOSTRAR_IA = True para recuperarlo (requiere API key de Anthropic)
+MOSTRAR_IA = False
+nombres_tabs = ["🧭 Resumen", "💶 Valoración", "🕰️ Histórico", "🆚 Competidores"] + (["🤖 Análisis IA"] if MOSTRAR_IA else []) + [
+    "📈 Finanzas", "📉 Técnico", "💸 Dividendos", "📘 Metodología"]
+tabs = dict(zip(nombres_tabs, st.tabs(nombres_tabs)))
+T_RES, T_VAL, T_HIS, T_COMP = (tabs[n] for n in nombres_tabs[:4])
+T_FIN, T_TEC, T_DIV, T_MET = (tabs[n] for n in nombres_tabs[-4:])
+T_IA = tabs.get("🤖 Análisis IA")
 
 # Resumen ---------------------------------------------------------------------
 with T_RES:
@@ -455,70 +460,71 @@ with T_COMP:
         st.plotly_chart(fig, width="stretch")
 
 # Análisis con IA -------------------------------------------------------------
-with T_IA:
-    from comun import secreto
-    st.write("Claude lee la descripción del negocio, las métricas, el veredicto del modelo y las noticias recientes, "
-             "y te da la parte que los números no ven: ventajas competitivas, riesgos, catalizadores y qué ha cambiado.")
-    clave_propietario, codigo = secreto("ANTHROPIC_API_KEY"), secreto("CLAVE_ACCESO")
-    api_key = None
-    c1, c2 = st.columns(2)
-    with c1:
-        if clave_propietario and codigo:
-            acceso = st.text_input("Código de acceso", type="password", key="ia_codigo",
-                                   help="Pídeselo al dueño de la web. Sin código, puedes usar tu propia API key.")
-            if acceso and acceso == codigo:
-                api_key = clave_propietario
-                st.caption("✅ Código correcto")
-            elif acceso:
-                st.caption("❌ Código incorrecto")
+if MOSTRAR_IA:
+    with T_IA:
+        from comun import secreto
+        st.write("Claude lee la descripción del negocio, las métricas, el veredicto del modelo y las noticias recientes, "
+                 "y te da la parte que los números no ven: ventajas competitivas, riesgos, catalizadores y qué ha cambiado.")
+        clave_propietario, codigo = secreto("ANTHROPIC_API_KEY"), secreto("CLAVE_ACCESO")
+        api_key = None
+        c1, c2 = st.columns(2)
+        with c1:
+            if clave_propietario and codigo:
+                acceso = st.text_input("Código de acceso", type="password", key="ia_codigo",
+                                       help="Pídeselo al dueño de la web. Sin código, puedes usar tu propia API key.")
+                if acceso and acceso == codigo:
+                    api_key = clave_propietario
+                    st.caption("✅ Código correcto")
+                elif acceso:
+                    st.caption("❌ Código incorrecto")
+            if not api_key:
+                propia = st.text_input("Tu API key de Anthropic", type="password", key="ia_key",
+                                       help="Se crea en console.anthropic.com. No se guarda en ningún sitio.")
+                api_key = propia or None
+        with c2:
+            modelo_txt = st.selectbox("Modelo", list(ia.MODELOS), key="ia_modelo")
+            buscar_web = st.checkbox("Buscar también en la web (más completo, algo más caro)", value=True, key="ia_web")
+            pdf = st.file_uploader("Opcional: informe anual o presentación de resultados (PDF)", type=["pdf"], key=f"ia_pdf_{ticker}")
+
+        news = noticias(ticker)
+        with st.expander(f"Noticias recientes que leerá ({len(news)})"):
+            if not news:
+                st.caption("Yahoo no tiene noticias recientes para este valor.")
+            for n in news:
+                st.markdown(f"- **{n['titulo']}** · {n['fuente']} · {n['fecha']}" + (f" · [abrir]({n['url']})" if n["url"] else ""))
+
+        resumen = "\n".join(f"- {i.nombre}: {f_item(i)}" for p in sc.PILARES for i in r.pilares[p].items if i.valor is not None)
+        resumen += f"\n- Precio: {f_num(precio)} {mon} · Capitalización: {f_dinero(m.get('market_cap'), mon)}"
+        if r.valor_justo:
+            resumen += f"\n- Valor justo estimado por el modelo: {f_num(r.valor_justo)} {mon}"
+        if r.alertas:
+            resumen += "\n- Alertas del modelo: " + " | ".join(r.alertas)
+
+        @st.cache_data(ttl=12 * 3600, show_spinner=False)
+        def generar(ticker_, modelo_, web_, prompt_, _api_key):
+            return ia.analizar(_api_key, modelo_, prompt_, web_)
+
+        if st.button("🤖 Generar análisis", type="primary", disabled=not api_key):
+            texto_doc = ia.texto_pdf(pdf) if pdf else ""
+            if pdf and not texto_doc:
+                st.warning("No se pudo leer texto del PDF (¿es un escaneo?). Sigo sin él.")
+            prompt = ia.construir_prompt(e.nombre, ticker, e.info, resumen, r.veredicto, r.nota, news, texto_doc, buscar_web)
+            with st.spinner("Claude está analizando la empresa… (30-90 s)"):
+                try:
+                    st.session_state[f"ia_{ticker}"] = generar(ticker, ia.MODELOS[modelo_txt], buscar_web, prompt, api_key)
+                except Exception as ex:
+                    tipo = type(ex).__name__
+                    if "Authentication" in tipo:
+                        st.error("La API key no es válida.")
+                    elif "RateLimit" in tipo:
+                        st.error("Límite de uso de la API alcanzado. Prueba en un minuto.")
+                    else:
+                        st.error(f"No se pudo generar el análisis ({tipo}): {ex}")
         if not api_key:
-            propia = st.text_input("Tu API key de Anthropic", type="password", key="ia_key",
-                                   help="Se crea en console.anthropic.com. No se guarda en ningún sitio.")
-            api_key = propia or None
-    with c2:
-        modelo_txt = st.selectbox("Modelo", list(ia.MODELOS), key="ia_modelo")
-        buscar_web = st.checkbox("Buscar también en la web (más completo, algo más caro)", value=True, key="ia_web")
-        pdf = st.file_uploader("Opcional: informe anual o presentación de resultados (PDF)", type=["pdf"], key=f"ia_pdf_{ticker}")
-
-    news = noticias(ticker)
-    with st.expander(f"Noticias recientes que leerá ({len(news)})"):
-        if not news:
-            st.caption("Yahoo no tiene noticias recientes para este valor.")
-        for n in news:
-            st.markdown(f"- **{n['titulo']}** · {n['fuente']} · {n['fecha']}" + (f" · [abrir]({n['url']})" if n["url"] else ""))
-
-    resumen = "\n".join(f"- {i.nombre}: {f_item(i)}" for p in sc.PILARES for i in r.pilares[p].items if i.valor is not None)
-    resumen += f"\n- Precio: {f_num(precio)} {mon} · Capitalización: {f_dinero(m.get('market_cap'), mon)}"
-    if r.valor_justo:
-        resumen += f"\n- Valor justo estimado por el modelo: {f_num(r.valor_justo)} {mon}"
-    if r.alertas:
-        resumen += "\n- Alertas del modelo: " + " | ".join(r.alertas)
-
-    @st.cache_data(ttl=12 * 3600, show_spinner=False)
-    def generar(ticker_, modelo_, web_, prompt_, _api_key):
-        return ia.analizar(_api_key, modelo_, prompt_, web_)
-
-    if st.button("🤖 Generar análisis", type="primary", disabled=not api_key):
-        texto_doc = ia.texto_pdf(pdf) if pdf else ""
-        if pdf and not texto_doc:
-            st.warning("No se pudo leer texto del PDF (¿es un escaneo?). Sigo sin él.")
-        prompt = ia.construir_prompt(e.nombre, ticker, e.info, resumen, r.veredicto, r.nota, news, texto_doc, buscar_web)
-        with st.spinner("Claude está analizando la empresa… (30-90 s)"):
-            try:
-                st.session_state[f"ia_{ticker}"] = generar(ticker, ia.MODELOS[modelo_txt], buscar_web, prompt, api_key)
-            except Exception as ex:
-                tipo = type(ex).__name__
-                if "Authentication" in tipo:
-                    st.error("La API key no es válida.")
-                elif "RateLimit" in tipo:
-                    st.error("Límite de uso de la API alcanzado. Prueba en un minuto.")
-                else:
-                    st.error(f"No se pudo generar el análisis ({tipo}): {ex}")
-    if not api_key:
-        st.caption("Introduce el código de acceso o tu API key para activar el botón.")
-    if st.session_state.get(f"ia_{ticker}"):
-        st.markdown(st.session_state[f"ia_{ticker}"])
-        st.caption("Generado por IA a partir de datos públicos. Puede contener errores: contrasta lo importante. No es asesoramiento financiero.")
+            st.caption("Introduce el código de acceso o tu API key para activar el botón.")
+        if st.session_state.get(f"ia_{ticker}"):
+            st.markdown(st.session_state[f"ia_{ticker}"])
+            st.caption("Generado por IA a partir de datos públicos. Puede contener errores: contrasta lo importante. No es asesoramiento financiero.")
 
 # Metodología -----------------------------------------------------------------
 with T_MET:
@@ -543,7 +549,6 @@ with T_MET:
 ### Más allá de los números de hoy
 - **Histórico**: compara los múltiplos actuales con los de la propia empresa en los últimos años.
 - **Competidores**: misma nota y mismas métricas para su competencia directa.
-- **Análisis IA**: Claude añade la parte cualitativa (negocio, ventajas competitivas, riesgos, noticias).
 - **Escáner** (menú lateral): recorre un índice entero y ordena las oportunidades.
 - **Backtest** (menú lateral): comprueba si el veredicto habría acertado en años anteriores. Úsalo para ajustar los pesos.
 

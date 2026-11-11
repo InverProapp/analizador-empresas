@@ -38,20 +38,14 @@ Usa el buscador por nombre o escribe el ticker de Yahoo Finance:
 
 ## Secciones
 
-- **Analizar empresa**: veredicto, valoración (DCF, Graham), histórico de múltiplos, competidores, análisis cualitativo con IA, finanzas, técnico y dividendos.
+- **Analizar empresa**: veredicto, valoración (DCF, Graham), histórico de múltiplos, competidores, finanzas, técnico y dividendos.
 - **Escáner**: IBEX 35, Euro Stoxx 50, Dow Jones 30, Nasdaq 100 o tu lista; ranking y filtro de "zona de compra".
 - **Backtest**: puntúa cada empresa en fechas pasadas con la información de entonces y mide la rentabilidad de los 12 meses siguientes.
 
-## Análisis con IA (opcional)
+## Análisis con IA (desactivado)
 
-Usa la API de Anthropic. En Streamlit Cloud → *Settings → Secrets* añade:
-
-```toml
-ANTHROPIC_API_KEY = "sk-ant-..."
-CLAVE_ACCESO = "una-clave-que-solo-des-a-quien-quieras"
-```
-
-Quien tenga el código de acceso usa tu clave; el resto puede pegar su propia API key.
+El código está en `ia.py`. Para activarlo: `MOSTRAR_IA = True` en `vistas/empresa.py`, añade `anthropic` y `pypdf`
+a `requirements.txt` y configura en los *Secrets* de Streamlit `ANTHROPIC_API_KEY` y `CLAVE_ACCESO`.
 
 ## Archivos
 
