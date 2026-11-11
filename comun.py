@@ -279,3 +279,15 @@ def precios_max(ticker: str) -> pd.DataFrame:
         return datos.precios_historicos(ticker)
     except Exception:
         return pd.DataFrame()
+
+
+def metrica(col, etiqueta: str, valor, delta=None, clave: str | None = None, delta_color: str = "normal", ayuda: str | None = None):
+    """Como st.metric, pero la etiqueta se puede pinchar para ver una mini definición."""
+    import glosario
+    with col:
+        if clave and clave in glosario.G:
+            with st.popover(etiqueta, type="tertiary", icon=":material/info:"):
+                st.markdown(glosario.texto(clave))
+            st.metric(etiqueta, valor, delta, delta_color=delta_color, label_visibility="collapsed")
+        else:
+            st.metric(etiqueta, valor, delta, delta_color=delta_color, help=ayuda)

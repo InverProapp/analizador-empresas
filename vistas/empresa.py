@@ -10,7 +10,7 @@ import datos
 import ia
 import scoring as sc
 from comun import *  # noqa: F401,F403
-from comun import ajustes, analizar, cargar, competidores, noticias, selector_empresa
+from comun import ajustes, analizar, cargar, competidores, metrica, noticias, selector_empresa
 
 ticker = selector_empresa()
 
@@ -44,16 +44,135 @@ if e.hist is not None and len(e.hist) > 1:
     var_dia = e.hist["Close"].iloc[-1] / e.hist["Close"].iloc[-2] - 1
 
 # Cabecera ------------------------------------------------------------------
-st.title(e.nombre)
-sector_es = sc.SECTORES_ES.get(e.sector, e.sector)
-st.caption(f"**{e.ticker}** · {sector_es} · {e.info.get('industry', '')} · {e.info.get('country', '')} · "
-           f"{e.info.get('exchange', '')} · moneda {mon}")
+import usuario as us
+from comun import abrir_empresa
+
+c_tit, c_acc = st.columns([2.6, 2.4], vertical_alignment="center")
+with c_tit:
+    st.title(e.nombre)
+    sector_es = sc.SECTORES_ES.get(e.sector, e.sector)
+    st.caption(f"**{e.ticker}** · {sector_es} · {e.info.get('industry', '')} · {e.info.get('country', '')} · "
+               f"{e.info.get('exchange', '')} · moneda {mon}")
+with c_acc:
+    a1, a2, a3 = st.columns(3)
+    fav = us.es_favorito(ticker)
+    a1.button("⭐ Favorito" if fav else "☆ Favorito", key="btn_fav", type="primary" if fav else "secondary",
+              on_click=us.alternar_favorito, args=(ticker, e.nombre, precio), disabled=not us.cargado(), width="stretch",
+              help="Quitar de tu lista" if fav else "Guardar en tu lista (en este navegador)")
+    mis_alertas = us.alertas_de(ticker)
+    estados = us.comprobar(mis_alertas, lambda tk: (m, r)) if mis_alertas else {}
+    n_cumplen = sum(1 for v in estados.values() if v[0])
+    with a2.popover(f"🔔 Alertas{f' ({len(mis_alertas)})' if mis_alertas else ''}", width="stretch"):
+        st.markdown(f"**Alertas de {e.ticker}**")
+        if not us.cargado():
+            st.caption("Cargando tus datos…")
+        for al in mis_alertas:
+            cumple, detalle = estados.get(al["id"], (None, ""))
+            icono = "✅" if cumple else "⏳" if cumple is False else "❔"
+            f1, f2 = st.columns([6, 1], vertical_alignment="center")
+            f1.markdown(f"{icono} {us.describir(al, mon)}  \n<span style='color:#888;font-size:12px'>{detalle} · creada {al['creada']}</span>",
+                        unsafe_allow_html=True)
+            f2.button("🗑️", key=f"borrar_{al['id']}", on_click=us.borrar_alerta, args=(al["id"],), help="Borrar alerta")
+        if mis_alertas:
+            st.divider()
+        st.markdown("**Nueva alerta**")
+        tipo = st.selectbox("Avísame cuando…", list(us.TIPOS), format_func=lambda t: us.TIPOS[t][0], key="alerta_tipo")
+        clase_valor = us.TIPOS[tipo][1]
+        valor = None
+        if clase_valor == "precio":
+            base = (precio or 0) * (1.05 if tipo == "precio_mayor" else 0.95)
+            valor = st.number_input(f"Precio ({mon})", min_value=0.0, value=float(round(base, 2)), step=0.05, key=f"alerta_valor_{tipo}")
+        elif clase_valor in ("pct", "num"):
+            valor = st.number_input("Valor", min_value=0.0, value=float(us.DEFECTOS.get(tipo, 5)), step=0.5, key=f"alerta_valor_{tipo}")
+        st.button("➕ Crear alerta", type="primary", on_click=us.crear_alerta, args=(ticker, e.nombre, tipo, valor),
+                  disabled=not us.cargado(), width="stretch")
+        st.caption("Las alertas se comprueban cada vez que abres la web (precios con ~15 min de retraso). "
+                   "Se guardan en este navegador. Todas, en ⭐ Mi lista y alertas.")
+    if a3.button("🎯 Simular", width="stretch", help="Abrir esta empresa en el simulador"):
+        abrir_empresa(ticker, "vistas/simulador.py")
+    if n_cumplen:
+        st.success(f"🔔 {n_cumplen} de tus alertas de esta empresa se cumple{'n' if n_cumplen > 1 else ''} ahora.", icon="🔔")
+
 k1, k2, k3, k4, k5 = st.columns(5)
-k1.metric("Precio", f"{f_num(precio)} {mon}", f_pct(var_dia, 2) if var_dia is not None else None)
-k2.metric("Capitalización", f_dinero(m.get("market_cap"), mon))
-k3.metric("PER", f_x(m.get("per")))
-k4.metric("Rent. dividendo", f_pct(m.get("rent_dividendo"), 2))
-k5.metric("Beta", f_num(m.get("beta")))
+metrica(k1, "Precio", f"{f_num(precio)} {mon}", f_pct(var_dia, 2) if var_dia is not None else None, "precio")
+metrica(k2, "Capitalización", f_dinero(m.get("market_cap"), mon), clave="capitalizacion")
+metrica(k3, "PER", f_x(m.get("per")), clave="per")
+metrica(k4, "Rent. dividendo", f_pct(m.get("rent_dividendo"), 2), clave="rent_dividendo")
+metrica(k5, "Beta", f_num(m.get("beta")), clave="beta")
+
+# Franja de mercado: rentabilidades, rango de 52 semanas, eventos y gráfico rápido
+cierres = e.hist["Close"].dropna() if e.hist is not None and not e.hist.empty else pd.Series(dtype=float)
+if len(cierres) > 5:
+    def rent_desde(dias=None, desde_fecha=None):
+        if desde_fecha is not None:
+            base = cierres[cierres.index < desde_fecha]
+            return cierres.iloc[-1] / base.iloc[-1] - 1 if len(base) else None
+        return cierres.iloc[-1] / cierres.iloc[-1 - dias] - 1 if len(cierres) > dias else None
+    rents = [("1 semana", rent_desde(5)), ("1 mes", rent_desde(21)), ("3 meses", rent_desde(63)),
+             ("En el año", rent_desde(desde_fecha=pd.Timestamp(f"{cierres.index[-1].year}-01-01"))),
+             ("1 año", rent_desde(252)), ("3 años", rent_desde(756)), ("5 años", rent_desde(1260))]
+    chips = "".join(
+        f"<span style='display:inline-block;margin:2px 6px 2px 0;padding:3px 10px;border-radius:12px;font-size:13px;"
+        f"background:{'#e6f4ec' if v >= 0 else '#fbe9e9'};color:{'#14653d' if v >= 0 else '#a12b2b'}'>{t} <b>{f_pct(v)}</b></span>"
+        for t, v in rents if v is not None)
+    ult = cierres.iloc[-252:]
+    mn, mx = float(ult.min()), float(ult.max())
+    pos = (precio - mn) / (mx - mn) if precio and mx > mn else None
+    eventos = []
+    for campo, nombre in (("earningsTimestamp", "📅 Resultados"), ("earningsTimestampStart", "📅 Resultados"),
+                          ("exDividendDate", "💸 Fecha ex-dividendo"), ("dividendDate", "💸 Pago de dividendo")):
+        ts = e.info.get(campo)
+        if ts and not any(nombre == ev[0] for ev in eventos):
+            try:
+                f = pd.Timestamp(int(ts), unit="s")
+                cuando = "próximo" if f >= pd.Timestamp.now() - pd.Timedelta(days=1) else "último"
+                eventos.append((nombre, f"{f:%d/%m/%Y}", cuando))
+            except Exception:
+                pass
+    c1, c2 = st.columns([1.6, 1])
+    with c1:
+        st.markdown(chips, unsafe_allow_html=True)
+        if pos is not None:
+            st.markdown(
+                f"<div style='font-size:12px;color:#666;margin-top:8px'>Rango de 52 semanas</div>"
+                f"<div style='display:flex;align-items:center;gap:8px;font-size:13px'><span>{f_num(mn)}</span>"
+                f"<div style='flex:1;height:8px;border-radius:4px;background:linear-gradient(90deg,#f4c7c7,#f7e3a8,#bfe6cf);position:relative'>"
+                f"<div style='position:absolute;left:calc({pos * 100:.1f}% - 7px);top:-4px;width:14px;height:14px;border-radius:50%;"
+                f"background:#222;border:2px solid #fff;box-shadow:0 0 2px #0006'></div></div><span>{f_num(mx)}</span></div>"
+                f"<div style='font-size:12px;color:#666;margin-top:4px'>Hoy está al {pos * 100:.0f}% del rango "
+                f"({f_pct(precio / mx - 1)} desde el máximo, {f_pct(precio / mn - 1)} sobre el mínimo)</div>",
+                unsafe_allow_html=True)
+        if eventos:
+            st.markdown(" · ".join(f"{n} ({c}): **{fe}**" for n, fe, c in eventos))
+        enlaces = [f"[Yahoo Finance](https://finance.yahoo.com/quote/{ticker})"]
+        if e.info.get("website"):
+            enlaces.append(f"[Web de la empresa]({e.info['website']})")
+        st.caption(" · ".join(enlaces))
+    with c2:
+        periodo_g = st.segmented_control("Periodo", ["1M", "6M", "1A", "5A"], default="1A", key="mini_periodo",
+                                         label_visibility="collapsed") or "1A"
+        n_dias = {"1M": 21, "6M": 126, "1A": 252, "5A": 1260}[periodo_g]
+        tramo = cierres.iloc[-n_dias:]
+        sube = tramo.iloc[-1] >= tramo.iloc[0]
+        col_l = COLOR["Comprar"] if sube else COLOR["Vender"]
+        fig = go.Figure(go.Scatter(x=tramo.index, y=tramo, mode="lines", line=dict(color=col_l, width=2), fill="tozeroy",
+                                   fillcolor="rgba(26,158,92,0.08)" if sube else "rgba(214,69,69,0.08)", hovertemplate="%{x|%d/%m/%Y}<br>%{y:.2f}<extra></extra>"))
+        lo, hi = float(tramo.min()), float(tramo.max())
+        fig.update_layout(height=170, margin=dict(l=0, r=0, t=0, b=0), yaxis=dict(range=[lo - (hi - lo) * 0.08, hi + (hi - lo) * 0.08], side="right"),
+                          xaxis=dict(showgrid=False), showlegend=False)
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+e1, e2 = st.columns(2)
+with e1.expander("🏢 Sobre la empresa"):
+    if e.info.get("longBusinessSummary"):
+        st.write(e.info["longBusinessSummary"])
+    datos_emp = [(k, e.info.get(c)) for k, c in (("Empleados", "fullTimeEmployees"), ("Sede", "city"), ("País", "country"))]
+    st.caption(" · ".join(f"{k}: {f'{v:,}'.replace(',', '.') if isinstance(v, int) else v}" for k, v in datos_emp if v))
+with e2.expander("📝 Mis notas sobre esta empresa" + (" ✏️" if us.nota(ticker) else "")):
+    texto_nota = st.text_area("Tu tesis de inversión, ideas, a qué precio entrarías…", value=us.nota(ticker), key=f"nota_{ticker}",
+                              height=120, label_visibility="collapsed", placeholder="Tu tesis de inversión, ideas, a qué precio entrarías…")
+    st.button("💾 Guardar nota", on_click=lambda: us.guardar_nota(ticker, st.session_state[f"nota_{ticker}"]), disabled=not us.cargado())
+    st.caption("Se guarda en este navegador.")
 
 # Veredicto -------------------------------------------------------------------
 col_v, col_g, col_r = st.columns([1.2, 1, 1.6])
@@ -65,12 +184,16 @@ with col_v:
         <div style="font-size:46px;font-weight:800;line-height:1.1">{r.veredicto.upper()}</div>
         <div style="font-size:14px;opacity:.9">Confianza {r.confianza.lower()} · datos para el {r.cobertura * 100:.0f}% de las métricas</div>
         </div>""", unsafe_allow_html=True)
+    import glosario
+    with st.popover("¿Qué significa el veredicto?", type="tertiary", icon=":material/info:"):
+        st.markdown(glosario.texto("veredicto"))
+        st.markdown(glosario.texto("nota"))
     if r.veredicto != r.veredicto_bruto:
         st.caption(f"Por nota saldría **{r.veredicto_bruto}**, pero las alertas lo limitan a **{r.veredicto}**.")
     v1, v2 = st.columns(2)
-    v1.metric("Valor justo estimado", f"{f_num(r.valor_justo)} {mon}" if r.valor_justo else "—",
+    metrica(v1, "Valor justo estimado", f"{f_num(r.valor_justo)} {mon}" if r.valor_justo else "—", clave="valor_justo", delta=
               f_pct(r.valor_justo / precio - 1) if r.valor_justo and precio else None)
-    v2.metric(f"Zona de compra (−{margen_seg * 100:.0f}%)", f"{f_num(r.precio_compra)} {mon}" if r.precio_compra else "—")
+    metrica(v2, f"Zona de compra (−{margen_seg * 100:.0f}%)", f"{f_num(r.precio_compra)} {mon}" if r.precio_compra else "—", clave="zona_compra")
 
 with col_g:
     fig = go.Figure(go.Indicator(
@@ -161,14 +284,14 @@ with T_RES:
 # Valoración ------------------------------------------------------------------
 with T_VAL:
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("PER", f_x(m.get("per")), help="Precio / beneficio últimos 12 meses")
-    c2.metric("PER futuro", f_x(m.get("per_fwd")))
-    c3.metric("EV/EBITDA", f_x(m.get("ev_ebitda")))
-    c4.metric("Precio / valor contable", f_x(m.get("p_vc")))
-    c1.metric("PEG", f_x(m.get("peg"), 2))
-    c2.metric("Precio / ventas", f_x(m.get("p_ventas")))
-    c3.metric("Rentabilidad FCF", f_pct(m.get("fcf_yield")))
-    c4.metric("Valor empresa (EV)", f_dinero(m.get("ev"), mon))
+    metrica(c1, "PER", f_x(m.get("per")), clave="per")
+    metrica(c2, "PER futuro", f_x(m.get("per_fwd")), clave="per_fwd")
+    metrica(c3, "EV/EBITDA", f_x(m.get("ev_ebitda")), clave="ev_ebitda")
+    metrica(c4, "Precio / valor contable", f_x(m.get("p_vc")), clave="p_vc")
+    metrica(c1, "PEG", f_x(m.get("peg"), 2), clave="peg")
+    metrica(c2, "Precio / ventas", f_x(m.get("p_ventas")), clave="p_ventas")
+    metrica(c3, "Rentabilidad FCF", f_pct(m.get("fcf_yield")), clave="fcf_yield")
+    metrica(c4, "Valor empresa (EV)", f_dinero(m.get("ev"), mon), clave="ev")
 
     st.subheader("Precio actual frente a estimaciones de valor")
     est = {"Precio actual": precio, "DCF": m.get("valor_dcf"), "Graham": m.get("valor_graham"),
@@ -192,7 +315,7 @@ with T_VAL:
         d1.metric("FCF base", f_dinero(m["fcf_base_dcf"], mon))
         d2.metric("Crecimiento años 1-5", f_pct(m["crecimiento_dcf"]))
         d3.metric("Tasa de descuento", f_pct(wacc))
-        d4.metric("Valor por acción", f"{f_num(m.get('valor_dcf'))} {mon}", f_pct(m.get("margen_seguridad_dcf")))
+        metrica(d4, "Valor por acción (DCF)", f"{f_num(m.get('valor_dcf'))} {mon}", f_pct(m.get("margen_seguridad_dcf")), clave="dcf")
         st.caption("Dos etapas: el crecimiento elegido durante 5 años, que converge hasta el terminal en el año 10. "
                    "Al valor de la empresa se le resta la deuda neta. Cambia los supuestos en la barra lateral.")
         # Sensibilidad
@@ -322,20 +445,20 @@ with T_TEC:
         c = st.columns(6)
         for col, (nombre, val) in zip(c, [("1 mes", m.get("rent_1m")), ("3 meses", m.get("rent_3m")), ("6 meses", m.get("rent_6m")),
                                            ("1 año", m.get("rent_1a")), ("3 años", m.get("rent_3a")), ("Volatilidad anual", m.get("volatilidad"))]):
-            col.metric(nombre, f_pct(val))
+            metrica(col, nombre, f_pct(val), clave="volatilidad" if nombre.startswith("Volatilidad") else None)
         c = st.columns(6)
-        c[0].metric("RSI (14)", f_num(m.get("rsi"), 0))
-        c[1].metric("vs media 200", f_pct(m.get("sobre_sma200")))
+        metrica(c[0], "RSI (14)", f_num(m.get("rsi"), 0), clave="rsi")
+        metrica(c[1], "vs media 200", f_pct(m.get("sobre_sma200")), clave="medias")
         c[2].metric("Máx. 52 sem.", f_num(m.get("max_52s")))
         c[3].metric("Mín. 52 sem.", f_num(m.get("min_52s")))
-        c[4].metric("Caída desde máximos", f_pct(m.get("drawdown_actual")))
-        c[5].metric("Peor caída (5a)", f_pct(m.get("max_drawdown")))
+        metrica(c[4], "Caída desde máximos", f_pct(m.get("drawdown_actual")), clave="drawdown")
+        metrica(c[5], "Peor caída (5a)", f_pct(m.get("max_drawdown")), clave="drawdown")
 
 # Dividendos ------------------------------------------------------------------
 with T_DIV:
     c = st.columns(4)
-    c[0].metric("Rentabilidad (12 m)", f_pct(m.get("rent_dividendo"), 2))
-    c[1].metric("Payout", f_pct(m.get("payout"), 0))
+    metrica(c[0], "Rentabilidad (12 m)", f_pct(m.get("rent_dividendo"), 2), clave="rent_dividendo")
+    metrica(c[1], "Payout", f_pct(m.get("payout"), 0), clave="payout")
     c[2].metric("Crecimiento anual 5a", f_pct(m.get("cagr_dividendo_5a")))
     c[3].metric("Años sin recortar", m.get("anos_sin_recorte", 0))
     da = m.get("div_anuales")
@@ -513,6 +636,11 @@ if MOSTRAR_IA:
 # Metodología -----------------------------------------------------------------
 with T_MET:
     st.markdown(f"""
+### 📖 Glosario
+Pincha en cualquier dato con el icono ⓘ para ver su definición. Aquí las tienes todas:
+
+""" + "\n".join(f"- **{t}**: {que}" + (f" {como}" if como else "") for t, que, como in __import__("glosario").G.values()) + f"""
+
 ### Cómo se llega al veredicto
 1. **Cada métrica se puntúa de 0 a 100** entre un valor "malo" y uno "bueno". Los umbrales de PER, EV/EBITDA,
    P/VC, margen operativo, ROE y deuda cambian **según el sector** (un PER de 20 es barato en tecnología y caro en energía).
