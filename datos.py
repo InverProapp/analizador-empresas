@@ -153,27 +153,42 @@ def buscar(texto: str, n: int = 10) -> list[dict]:
             "_rank": (_prioridad_bolsa(sym, bolsa), orden),
         })
     # Yahoo a veces solo devuelve cotizaciones secundarias (p. ej. "Inditex" -> ZARA.NE, ITX.VI…).
-    # Buscamos también por el símbolo base para encontrar la bolsa principal (ITX -> ITX.MC).
-    if out and min(r["_rank"][0] for r in out) > 0:
-        vistos = {r["symbol"] for r in out}
-        bases = []
-        for r in out:
-            b = r["symbol"].split(".")[0]
-            if b.isalpha() and b not in bases:
-                bases.append(b)
-        for b in bases[:3]:
-            try:
-                extra = yf.Search(b, max_results=10, news_count=0).quotes
-            except Exception:
+    # Buscamos también por el nombre completo y por los símbolos base hasta encontrar la bolsa principal
+    # ("Inditex" -> "Industria de Diseño Textil" -> ITX -> ITX.MC).
+    vistos = {r["symbol"] for r in out}
+    hechas = {texto.strip().lower()}
+    pendientes = []
+
+    def encolar(desde):
+        if desde and desde["nombre"] and desde["nombre"].lower() not in hechas:
+            pendientes.append(desde["nombre"])
+        b = desde["symbol"].split(".")[0]
+        if b.isalpha() and b.lower() not in hechas:
+            pendientes.append(b)
+
+    for r in out[:3]:
+        encolar(r)
+    extra_busquedas = 0
+    while out and min(r["_rank"][0] for r in out) > 0 and pendientes and extra_busquedas < 6:
+        consulta = pendientes.pop(0)
+        if consulta.lower() in hechas:
+            continue
+        hechas.add(consulta.lower())
+        extra_busquedas += 1
+        try:
+            extra = yf.Search(consulta, max_results=10, news_count=0).quotes
+        except Exception:
+            continue
+        for q in extra:
+            sym = q.get("symbol") or ""
+            if not sym or sym in vistos or q.get("quoteType") not in ("EQUITY", None):
                 continue
-            for q in extra:
-                sym = q.get("symbol") or ""
-                if sym.split(".")[0] != b or sym in vistos or q.get("quoteType") not in ("EQUITY", None):
-                    continue
-                vistos.add(sym)
-                out.append({"symbol": sym, "nombre": q.get("longname") or q.get("shortname") or sym,
-                            "bolsa": q.get("exchDisp") or q.get("exchange", ""), "tipo": q.get("quoteType", ""),
-                            "_rank": (_prioridad_bolsa(sym, q.get("exchange", "")), -1)})
+            vistos.add(sym)
+            nuevo_r = {"symbol": sym, "nombre": q.get("longname") or q.get("shortname") or sym,
+                       "bolsa": q.get("exchDisp") or q.get("exchange", ""), "tipo": q.get("quoteType", ""),
+                       "_rank": (_prioridad_bolsa(sym, q.get("exchange", "")), 100 + len(out))}
+            out.append(nuevo_r)
+            encolar(nuevo_r)
     out.sort(key=lambda r: r["_rank"])
     for r in out:
         r.pop("_rank")

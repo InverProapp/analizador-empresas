@@ -20,7 +20,7 @@ modo = st.sidebar.radio("Buscar por", ["Nombre", "Ticker"], horizontal=True, key
 ticker = None
 if modo == "Nombre":
     q = st.sidebar.text_input("Empresa", key="texto_busqueda", help="Escribe el nombre y elige el ticker de la bolsa que quieras.")
-    resultados = buscar(q, 3) if q else []
+    resultados = buscar(q, 4) if q else []
     if resultados:
         opciones = {f"{r['symbol']} · {r['nombre']} ({r['bolsa']})": r["symbol"] for r in resultados}
         ticker = opciones[st.sidebar.selectbox("Resultados", list(opciones))]
@@ -384,7 +384,7 @@ with T_SIM:
         periodo = c2.selectbox("Periodo", opciones_p, index=min(2, len(opciones_p) - 1),
                                format_func=lambda x: "Todo el histórico" if x == "Todo" else f"Últimos {x} años" if x > 1 else "Último año",
                                key="sim_periodo")
-        capital_ini = c3.number_input("Capital inicial", 1000, 10_000_000, 10_000, 1000, key="sim_capital")
+        capital_ini = c3.number_input(f"Capital inicial ({mon})", 1000, 10_000_000, 10_000, 1000, key="sim_capital")
         h = hist_sim if periodo == "Todo" else hist_sim[hist_sim.index >= hist_sim.index[-1] - pd.DateOffset(years=periodo)]
         cierre = h["Close"]
 
@@ -431,7 +431,7 @@ with T_SIM:
             rs = res_sim.resumen(capital_ini)
 
             # Titular
-            eur = lambda x: f"{x:,.0f} €".replace(",", ".")  # noqa: E731
+            eur = lambda x: f"{x:,.0f} {mon}".replace(",", ".")  # noqa: E731
             dif = rs["final"] - rs["bh_final"]
             frase = (f"Con tu estrategia, {eur(capital_ini)} se habrían convertido en **{eur(rs['final'])}** "
                      f"({f_pct(rs['rent_total'])}), frente a **{eur(rs['bh_final'])}** ({f_pct(rs['bh_total'])}) "
@@ -481,7 +481,7 @@ with T_SIM:
             fig2.add_scatter(x=res_sim.capital.index, y=res_sim.capital, name="Tu estrategia", line=dict(color=AZUL, width=2))
             fig2.add_scatter(x=res_sim.capital_bh.index, y=res_sim.capital_bh, name="Comprar y mantener", line=dict(color=GRIS, width=2))
             fig2.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10), legend=dict(orientation="h", y=1.15),
-                               title="Evolución de tu dinero (con dividendos)", yaxis_title="€")
+                               title="Evolución de tu dinero (con dividendos)", yaxis_title=mon)
             st.plotly_chart(fig2, width="stretch")
 
             if not res_sim.operaciones.empty:
