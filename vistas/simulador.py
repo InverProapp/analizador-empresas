@@ -61,8 +61,9 @@ hist = hist.dropna(subset=["Close"])
 hist = hist[~hist.index.duplicated(keep="last")].sort_index()
 
 st.title(f"🎯 {e.nombre}")
+sesiones = f"{len(hist):,}".replace(",", ".")
 st.caption(f"**{ticker}** · último precio {f_num(hist['Close'].iloc[-1])} {e.moneda} · "
-           f"histórico desde {hist.index[0]:%d/%m/%Y} ({len(hist):,} sesiones)".replace(",", "."))
+           f"histórico desde {hist.index[0]:%d/%m/%Y} ({sesiones} sesiones)")
 
 # Lo que decía el modelo en cada momento (solo con la información disponible entonces)
 modelo = None

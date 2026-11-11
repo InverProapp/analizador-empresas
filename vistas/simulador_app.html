@@ -448,16 +448,43 @@ function pintarKpis() {
 
 const gd = $("graf");
 let pintando = false;
+// Para pintar rápido tramos largos: velas semanales o mensuales (los cálculos siempre son diarios)
+let granularidad = "D", ventana = [0, N - 1]; // ventana = tramo pintado en vista diaria
+function calcularVentana(a, b) { const n = b - a + 1; return [Math.max(0, a - n), Math.min(N - 1, b + n)]; }
+function elegirGranularidad(a, b) { const n = b - a + 1; return n > 6000 ? "M" : n > 1600 ? "W" : "D"; }
+function claveGrupo(i, g) { if (g === "M") return mes(i); const d = new Date(Date.parse(D.fechas[i])); const lunes = new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * 86400000); return lunes.toISOString().slice(0, 10); }
+function velas(g) {
+  if (g === "D") { const [a, b] = ventana, sl = (arr) => arr ? arr.slice(a, b + 1) : arr;
+    return { x: D.fechas.slice(a, b + 1), o: sl(D.o), h: sl(D.h), l: sl(D.l), c: sl(D.c), v: sl(D.v) }; }
+  const k = "velas_" + g; if (cache[k]) return cache[k];
+  const x = [], o = [], h = [], l = [], c = [], v = [];
+  let actual = null;
+  for (let i = 0; i < N; i++) {
+    const kk = claveGrupo(i, g);
+    if (kk !== actual) { actual = kk; x.push(D.fechas[i]); o.push(D.o[i]); h.push(D.h[i]); l.push(D.l[i]); c.push(D.c[i]); v.push(D.v ? D.v[i] || 0 : 0); }
+    else { const j = x.length - 1; h[j] = Math.max(h[j], D.h[i]); l[j] = Math.min(l[j], D.l[i]); c[j] = D.c[i]; v[j] += D.v ? D.v[i] || 0 : 0; }
+  }
+  return cache[k] = { x, o, h, l, c, v };
+}
+function submuestra(arr, x, g) { // para líneas (medias, etc.): un punto por grupo
+  if (g === "D") return { x: x.slice(ventana[0], ventana[1] + 1), y: Array.from(arr.slice(ventana[0], ventana[1] + 1)) };
+  const xs = [], ys = []; let actual = null;
+  for (let i = 0; i < N; i++) { const kk = claveGrupo(i, g); if (kk !== actual) { actual = kk; xs.push(D.fechas[i]); ys.push(arr[i]); } else ys[ys.length - 1] = arr[i]; }
+  return { x: xs, y: ys };
+}
 function trazasPrecio(i0, i1) {
-  const x = D.fechas, t = [];
-  if (S.velas) t.push({ type: "candlestick", x, open: D.o, high: D.h, low: D.l, close: D.c, name: "Precio", increasing: { line: { color: "#26a269", width: 1 } }, decreasing: { line: { color: "#d64545", width: 1 } }, xaxis: "x", yaxis: "y", hoverinfo: "x+y" });
-  else t.push({ type: "scatter", mode: "lines", x, y: D.c, name: "Precio", line: { color: "#444", width: 1.4 } });
-  if (S.m50) t.push({ type: "scatter", mode: "lines", x, y: Array.from(sma(50)), name: "Media 50", line: { color: "#f39c12", width: 1.2 } });
-  if (S.m200) t.push({ type: "scatter", mode: "lines", x, y: Array.from(sma(200)), name: "Media 200", line: { color: "#8e44ad", width: 1.4 } });
-  if (S.boll) { const m = sma(20), s = desv(20); t.push({ type: "scatter", mode: "lines", x, y: Array.from(m, (v, i) => v + 2 * s[i]), name: "Bollinger", line: { color: C.gris, width: 0.8, dash: "dot" } });
-    t.push({ type: "scatter", mode: "lines", x, y: Array.from(m, (v, i) => v - 2 * s[i]), name: "Bollinger inf.", showlegend: false, line: { color: C.gris, width: 0.8, dash: "dot" } }); }
-  if (S.estrategia === "medias") { t.push({ type: "scatter", mode: "lines", x, y: Array.from(sma(S.rapida)), name: `Media ${S.rapida}`, line: { color: C.verde, width: 1.4 } });
-    t.push({ type: "scatter", mode: "lines", x, y: Array.from(sma(S.lenta)), name: `Media ${S.lenta}`, line: { color: C.rojo, width: 1.4 } }); }
+  const x = D.fechas, t = [], g = granularidad, V = velas(g);
+  const linea = (arr, extra) => Object.assign({ type: "scatter", mode: "lines" }, submuestra(arr, x, g), extra);
+  const nomG = g === "W" ? " (semanal)" : g === "M" ? " (mensual)" : "";
+  if (S.velas) t.push({ type: "candlestick", x: V.x, open: V.o, high: V.h, low: V.l, close: V.c, name: "Precio" + nomG, increasing: { line: { color: "#26a269", width: 1 } }, decreasing: { line: { color: "#d64545", width: 1 } }, hoverinfo: "x+y" });
+  else t.push({ type: "scatter", mode: "lines", x: V.x, y: V.c, name: "Precio" + nomG, line: { color: "#444", width: 1.4 } });
+  if (S.m50) t.push(linea(sma(50), { name: "Media 50", line: { color: "#f39c12", width: 1.2 } }));
+  if (S.m200) t.push(linea(sma(200), { name: "Media 200", line: { color: "#8e44ad", width: 1.4 } }));
+  if (S.boll) { const m = sma(20), s = desv(20);
+    t.push(linea(Float64Array.from(m, (v, i) => v + 2 * s[i]), { name: "Bollinger", line: { color: C.gris, width: 0.8, dash: "dot" } }));
+    t.push(linea(Float64Array.from(m, (v, i) => v - 2 * s[i]), { name: "Bollinger inf.", showlegend: false, line: { color: C.gris, width: 0.8, dash: "dot" } })); }
+  if (S.estrategia === "medias") { t.push(linea(sma(S.rapida), { name: `Media ${S.rapida}`, line: { color: C.verde, width: 1.4 } }));
+    t.push(linea(sma(S.lenta), { name: `Media ${S.lenta}`, line: { color: C.rojo, width: 1.4 } })); }
   if (S.estrategia === "caida") { const b = ESTRATEGIAS.caida.cfg(S).buyLevel;
     t.push({ type: "scatter", mode: "lines", x: x.slice(i0, i1 + 1), y: Array.from(b.slice(i0, i1 + 1)), name: "Precio de compra (caída)", line: { color: C.verde, width: 1.2, dash: "dot" } }); }
   if (S.estrategia === "modelo" && !ESTRATEGIAS.modelo.noDisponible) {
@@ -470,8 +497,8 @@ function trazasPrecio(i0, i1) {
     if (vts.length) t.push({ type: "scatter", mode: "markers", x: vts.map(v => x[v[0]]), y: vts.map(v => v[1]), name: "Venta", text: vts.map(v => v[2]),
       marker: { symbol: "triangle-down", size: 13, color: C.rojo, line: { color: "#fff", width: 1 } }, hovertemplate: "%{text} %{x}<br>%{y:.2f}<extra></extra>" });
   }
-  if (S.vol && D.v) t.push({ type: "bar", x, y: D.v, name: "Volumen", marker: { color: "rgba(138,147,163,0.35)" }, yaxis: "y2", showlegend: false, hoverinfo: "skip" });
-  if (S.rsiPanel) { t.push({ type: "scatter", mode: "lines", x, y: Array.from(rsi(S.estrategia === "rsi" ? S.rsiN : 14)), name: "RSI", line: { color: C.azul, width: 1.2 }, yaxis: "y3", showlegend: false }); }
+  if (S.vol && D.v) t.push({ type: "bar", x: V.x, y: V.v, name: "Volumen", marker: { color: "rgba(138,147,163,0.35)" }, yaxis: "y2", showlegend: false, hoverinfo: "skip" });
+  if (S.rsiPanel) t.push(linea(rsi(S.estrategia === "rsi" ? S.rsiN : 14), { name: "RSI", line: { color: C.azul, width: 1.2 }, yaxis: "y3", showlegend: false }));
   return t;
 }
 function formasNuestras(i0, i1) {
@@ -492,8 +519,7 @@ function pintarGrafico() {
   const layout = {
     uirevision: "fijo", margin: { l: 55, r: 15, t: 10, b: 30 }, hovermode: "x unified", dragmode: "zoom", showlegend: true,
     legend: { orientation: "h", y: 1.06, x: 0, font: { size: 11 } }, plot_bgcolor: "#fff", paper_bgcolor: "rgba(0,0,0,0)",
-    xaxis: { type: "date", rangeslider: { visible: false }, showspikes: true, spikemode: "across", spikethickness: 1, spikecolor: "#bbb",
-      rangebreaks: [{ bounds: ["sat", "mon"] }] },
+    xaxis: { type: "date", rangeslider: { visible: false }, showspikes: true, spikemode: "across", spikethickness: 1, spikecolor: "#bbb" },
     yaxis: { domain: [abajo + (abajo ? 0.03 : 0), 1], type: S.log ? "log" : "linear", title: { text: D.moneda, font: { size: 11 } }, fixedrange: false, gridcolor: "#f0f0f0" },
     yaxis2: { domain: [S.rsiPanel ? 0.22 : 0, S.rsiPanel ? 0.32 : 0.12], showticklabels: false, showgrid: false, fixedrange: true, visible: S.vol },
     yaxis3: { domain: [0, 0.18], range: [0, 100], tickvals: [30, 70], fixedrange: true, gridcolor: "#f0f0f0", visible: S.rsiPanel },
@@ -501,6 +527,7 @@ function pintarGrafico() {
     newshape: { line: { color: "#ff4b4b", width: 2 }, fillcolor: "rgba(255,75,75,0.12)" },
     font: { family: "Source Sans Pro, sans-serif", size: 12 },
   };
+  if (enfocarPeriodo) { granularidad = elegirGranularidad(Math.max(0, i0 - 10), i1); ventana = calcularVentana(Math.max(0, i0 - 10), i1); }
   if (enfocarPeriodo) { layout.xaxis.range = [D.fechas[Math.max(0, i0 - 10)], D.fechas[i1]]; layout.uirevision = "p" + i0 + "_" + i1 + "_" + (S.log ? "l" : "n"); enfocarPeriodo = false; enfocarPendiente = true; ultimaRevision = layout.uirevision; }
   else layout.uirevision = ultimaRevision;
   const config = { responsive: true, displaylogo: false, scrollZoom: true, locale: "es",
@@ -535,7 +562,14 @@ function registrarEventos() {
   if (eventosOk || !gd.on) return; eventosOk = true;
   gd.on("plotly_relayout", (ev) => {
     if (pintando || ajustandoY) return;
-    if (Object.keys(ev).some(k => k.startsWith("xaxis.range") || k === "xaxis.autorange")) { setTimeout(ajustarY, 0); }
+    if (Object.keys(ev).some(k => k.startsWith("xaxis.range") || k === "xaxis.autorange")) {
+      const r = gd.layout.xaxis.range;
+      const a = r ? indiceFecha(String(r[0]).slice(0, 10)) : 0, b = r ? indiceFecha(String(r[1]).slice(0, 10)) : N - 1;
+      const nueva = r ? elegirGranularidad(a, b) : "M";
+      const fuera = nueva === "D" && (a < ventana[0] || b > ventana[1]);
+      if (nueva !== granularidad || fuera) { granularidad = nueva; ventana = calcularVentana(a, b); pintarGrafico(); }
+      setTimeout(ajustarY, 0);
+    }
     let cambioNivel = false, cambioDibujos = false;
     for (const k of Object.keys(ev)) {
       const m = k.match(/^shapes\[(\d+)\]\.(y0|y1)$/);
@@ -552,16 +586,18 @@ function registrarEventos() {
 function pintarCapital() {
   const el = $("graf_capital");
   if (!R) { Plotly.purge(el); return; }
-  const x = D.fechas.slice(R.r.i0, R.r.i1 + 1), dca = S.estrategia === "dca";
+  const dca = S.estrategia === "dca", paso = (R.r.i1 - R.r.i0) > 2500 ? 5 : 1;
+  const sub = (arr) => paso === 1 ? Array.from(arr) : Array.from(arr).filter((_, k, a) => k % paso === 0 || k === a.length - 1);
+  const x = sub(D.fechas.slice(R.r.i0, R.r.i1 + 1));
   const dd = (eq) => { let p = -Infinity; return Array.from(eq, v => { p = Math.max(p, v); return v / p - 1; }); };
   const t = [
-    { type: "scatter", mode: "lines", x, y: Array.from(R.r.eq), name: "Tu estrategia", line: { color: C.azul, width: 2.2 } },
-    { type: "scatter", mode: "lines", x, y: Array.from(R.bh.eq), name: dca ? "Todo el primer día" : "Comprar y mantener", line: { color: C.gris, width: 2 } },
-    { type: "scatter", mode: "lines", x, y: dd(R.r.eq), name: "Caída desde máximos (estrategia)", yaxis: "y2", fill: "tozeroy", line: { color: "rgba(214,69,69,0.7)", width: 1 }, fillcolor: "rgba(214,69,69,0.15)" },
+    { type: "scatter", mode: "lines", x, y: sub(R.r.eq), name: "Tu estrategia", line: { color: C.azul, width: 2.2 } },
+    { type: "scatter", mode: "lines", x, y: sub(R.bh.eq), name: dca ? "Todo el primer día" : "Comprar y mantener", line: { color: C.gris, width: 2 } },
+    { type: "scatter", mode: "lines", x, y: sub(dd(R.r.eq)), name: "Caída desde máximos (estrategia)", yaxis: "y2", fill: "tozeroy", line: { color: "rgba(214,69,69,0.7)", width: 1 }, fillcolor: "rgba(214,69,69,0.15)" },
   ];
-  if (dca) t.push({ type: "scatter", mode: "lines", x, y: Array.from(R.r.aport), name: "Dinero aportado", line: { color: C.ambar, width: 1.5, dash: "dot", shape: "hv" } });
+  if (dca) t.push({ type: "scatter", mode: "lines", x, y: sub(R.r.aport), name: "Dinero aportado", line: { color: C.ambar, width: 1.5, dash: "dot", shape: "hv" } });
   Plotly.react(el, t, { margin: { l: 60, r: 15, t: 10, b: 30 }, hovermode: "x unified", legend: { orientation: "h", y: 1.12, font: { size: 11 } },
-    xaxis: { type: "date", rangebreaks: [{ bounds: ["sat", "mon"] }] }, yaxis: { domain: [0.3, 1], title: { text: D.moneda, font: { size: 11 } }, gridcolor: "#f0f0f0" },
+    xaxis: { type: "date" }, yaxis: { domain: [0.3, 1], title: { text: D.moneda, font: { size: 11 } }, gridcolor: "#f0f0f0" },
     yaxis2: { domain: [0, 0.24], tickformat: ".0%", gridcolor: "#f0f0f0", title: { text: "caída", font: { size: 10 } } },
     plot_bgcolor: "#fff", paper_bgcolor: "rgba(0,0,0,0)", font: { family: "Source Sans Pro, sans-serif", size: 12 } },
     { responsive: true, displaylogo: false, locale: "es" });
