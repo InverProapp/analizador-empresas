@@ -710,3 +710,13 @@ def noticias(ticker: str, n: int = 12) -> list[dict]:
                     "fuente": prov.get("displayName") if isinstance(prov, dict) else c.get("publisher", ""),
                     "fecha": str(fecha)[:10], "url": url})
     return [x for x in out if x["titulo"]]
+
+
+def precios_historicos(ticker: str) -> pd.DataFrame:
+    """Todo el histórico diario disponible (desde la salida a bolsa), con dividendos."""
+    if yf is None:
+        return pd.DataFrame()
+    h = yf.Ticker(ticker).history(period="max", auto_adjust=False, actions=True)
+    if h is not None and not h.empty and h.index.tz is not None:
+        h.index = h.index.tz_localize(None)
+    return h

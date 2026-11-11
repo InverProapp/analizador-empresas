@@ -270,3 +270,12 @@ def abrir_empresa(tk: str, pagina: str = "vistas/empresa.py"):
     st.session_state["_guardado_modo_busqueda"] = "Ticker"
     st.session_state["_guardado_ticker_directo"] = tk
     st.switch_page(pagina)
+
+
+
+@st.cache_data(ttl=12 * 3600, show_spinner=False)
+def precios_max(ticker: str) -> pd.DataFrame:
+    try:
+        return datos.precios_historicos(ticker)
+    except Exception:
+        return pd.DataFrame()
