@@ -78,6 +78,7 @@ class Empresa:
     cashflow: pd.DataFrame = field(default_factory=pd.DataFrame)
     dividends: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
     errores: list = field(default_factory=list)
+    fecha_ref: pd.Timestamp | None = None  # None = hoy; en el backtest, la fecha simulada
 
     @property
     def nombre(self):
@@ -96,7 +97,7 @@ class Empresa:
         return self.info.get("sector") or "Desconocido"
 
 
-def descargar(ticker: str, periodo_hist: str = "5y") -> Empresa:
+def descargar(ticker: str, periodo_hist: str = "6y") -> Empresa:
     """Descarga todo lo necesario de Yahoo Finance."""
     if yf is None:
         raise RuntimeError("Falta instalar yfinance: pip install yfinance")
@@ -113,7 +114,7 @@ def descargar(ticker: str, periodo_hist: str = "5y") -> Empresa:
             return defecto
 
     e.info = intento("info", lambda: t.info, {}) or {}
-    e.hist = intento("histórico", lambda: t.history(period=periodo_hist, auto_adjust=True), pd.DataFrame())
+    e.hist = intento("histórico", lambda: t.history(period=periodo_hist, auto_adjust=False), pd.DataFrame())
     e.income = _ordenar(intento("cuenta de resultados", lambda: t.income_stmt, pd.DataFrame()))
     e.balance = _ordenar(intento("balance", lambda: t.balance_sheet, pd.DataFrame()))
     e.cashflow = _ordenar(intento("flujos de caja", lambda: t.cashflow, pd.DataFrame()))
@@ -318,11 +319,15 @@ def rentabilidad_dividendo(e: Empresa, precio):
     (evita el lío de unidades del campo dividendYield de Yahoo)."""
     if e.dividends is None or len(e.dividends) == 0 or not precio:
         return 0.0
-    ult = e.dividends.index.max()
-    hace12 = ult - pd.Timedelta(days=365)
-    if (pd.Timestamp.now() - ult).days > 550:  # ya no paga dividendo
+    hoy = e.fecha_ref or pd.Timestamp.now()
+    divs = e.dividends[e.dividends.index <= hoy]
+    if len(divs) == 0:
         return 0.0
-    total = e.dividends[e.dividends.index > hace12].sum()
+    ult = divs.index.max()
+    hace12 = ult - pd.Timedelta(days=365)
+    if (hoy - ult).days > 550:  # ya no paga dividendo
+        return 0.0
+    total = divs[divs.index > hace12].sum()
     return num(total / precio) or 0.0
 
 
@@ -330,7 +335,7 @@ def dividendos_anuales(e: Empresa) -> pd.Series:
     if e.dividends is None or len(e.dividends) == 0:
         return pd.Series(dtype=float)
     s = e.dividends.groupby(e.dividends.index.year).sum()
-    año_actual = pd.Timestamp.now().year
+    año_actual = (e.fecha_ref or pd.Timestamp.now()).year
     return s[s.index < año_actual]  # solo años completos
 
 
@@ -350,6 +355,10 @@ def metricas(e: Empresa, crecimiento_dcf=None, tasa_descuento=0.09, crec_termina
         mcap = m["market_cap"] = precio * acciones
     if not acciones and mcap and precio:
         acciones = mcap / precio
+    if not acciones:  # sin info (p. ej. backtest): acciones del último balance
+        acciones = _val(_row(e.balance, "Ordinary Shares Number", "Share Issued"))
+        if acciones and precio:
+            mcap = m["market_cap"] = precio * acciones
     m["acciones"] = acciones
     misma_moneda = (e.moneda_fin or e.moneda) == e.moneda
     m["misma_moneda"] = misma_moneda
@@ -392,6 +401,21 @@ def metricas(e: Empresa, crecimiento_dcf=None, tasa_descuento=0.09, crec_termina
     if m["ev_ebitda"] is not None and m["ev_ebitda"] <= 0:
         m["ev_ebitda"] = None
     m["ev"] = num(i.get("enterpriseValue"))
+
+    # Si Yahoo no da el ratio (o estamos en una fecha pasada), lo calculamos desde los estados financieros
+    ni0, eq0, rev0 = _val(ni), _val(equity), _val(rev)
+    ebitda0, deuda0, caja0 = _val(ebitda_s), _val(deuda_s), _val(caja_s)
+    if mcap:
+        if m["per"] is None and ni0 and ni0 > 0:
+            m["per"] = mcap / ni0
+        if m["p_vc"] is None and eq0 and eq0 > 0:
+            m["p_vc"] = mcap / eq0
+        if m["p_ventas"] is None and rev0 and rev0 > 0:
+            m["p_ventas"] = mcap / rev0
+        if m["ev"] is None and deuda0 is not None:
+            m["ev"] = mcap + deuda0 - (caja0 or 0)
+        if m["ev_ebitda"] is None and m["ev"] and ebitda0 and ebitda0 > 0:
+            m["ev_ebitda"] = m["ev"] / ebitda0
     if not misma_moneda:
         # Yahoo mezcla el precio en una moneda con beneficios en otra: los múltiplos no son fiables
         for k in ("per", "per_fwd", "peg", "p_vc", "p_ventas", "ev_ebitda"):
@@ -406,8 +430,15 @@ def metricas(e: Empresa, crecimiento_dcf=None, tasa_descuento=0.09, crec_termina
     if m["roe"] is None and _val(ni) is not None and _val(equity):
         m["roe"] = _val(ni) / _val(equity)
     m["roa"] = num(i.get("returnOnAssets"))
+    ta0 = _val(_row(bal, "Total Assets"))
+    if m["roa"] is None and ni0 is not None and ta0:
+        m["roa"] = ni0 / ta0
     m["margen_bruto"] = num(i.get("grossMargins"))
+    if m["margen_bruto"] is None and _val(_row(inc, "Gross Profit")) is not None and rev0:
+        m["margen_bruto"] = _val(_row(inc, "Gross Profit")) / rev0
     m["margen_operativo"] = num(i.get("operatingMargins"))
+    if m["margen_operativo"] is None and _val(ebit_s) is not None and rev0:
+        m["margen_operativo"] = _val(ebit_s) / rev0
     m["margen_neto"] = num(i.get("profitMargins"))
     if m["margen_neto"] is None and _val(ni) is not None and _val(rev):
         m["margen_neto"] = _val(ni) / _val(rev)
@@ -425,6 +456,9 @@ def metricas(e: Empresa, crecimiento_dcf=None, tasa_descuento=0.09, crec_termina
     m["deuda_patrimonio"] = de / 100 if de is not None else (
         _val(deuda_s) / _val(equity) if _val(deuda_s) is not None and _val(equity) and _val(equity) > 0 else None)
     m["liquidez"] = num(i.get("currentRatio"))
+    if m["liquidez"] is None:
+        ca0, cl0 = _val(_row(bal, "Current Assets")), _val(_row(bal, "Current Liabilities"))
+        m["liquidez"] = ca0 / cl0 if ca0 is not None and cl0 else None
     m["prueba_acida"] = num(i.get("quickRatio"))
     deuda = num(i.get("totalDebt")) if num(i.get("totalDebt")) is not None else _val(deuda_s)
     caja = num(i.get("totalCash")) if num(i.get("totalCash")) is not None else _val(caja_s)
@@ -437,7 +471,11 @@ def metricas(e: Empresa, crecimiento_dcf=None, tasa_descuento=0.09, crec_termina
 
     # --- Crecimiento
     m["crec_ingresos"] = num(i.get("revenueGrowth"))
+    if m["crec_ingresos"] is None and rev0 and _val(rev, 1):
+        m["crec_ingresos"] = rev0 / _val(rev, 1) - 1
     m["crec_beneficio"] = num(i.get("earningsGrowth"))
+    if m["crec_beneficio"] is None and ni0 is not None and _val(ni, 1) and _val(ni, 1) > 0:
+        m["crec_beneficio"] = ni0 / _val(ni, 1) - 1
     m["cagr_ingresos"] = cagr(rev)
     m["cagr_beneficio"] = cagr(ni)
     m["cagr_fcf"] = cagr(fcf_s)
@@ -445,6 +483,9 @@ def metricas(e: Empresa, crecimiento_dcf=None, tasa_descuento=0.09, crec_termina
     # --- Dividendo
     m["rent_dividendo"] = rentabilidad_dividendo(e, precio)
     m["payout"] = num(i.get("payoutRatio"))
+    if m["payout"] is None and ni0 and ni0 > 0:
+        dp = _val(_row(cf, "Cash Dividends Paid", "Common Stock Dividend Paid"))
+        m["payout"] = abs(dp) / ni0 if dp is not None else None
     da = dividendos_anuales(e)
     m["div_anuales"] = da
     m["cagr_dividendo_5a"] = cagr(da.iloc[::-1], 5) if len(da) >= 3 else None
@@ -518,3 +559,112 @@ def metricas(e: Empresa, crecimiento_dcf=None, tasa_descuento=0.09, crec_termina
         m["max_drawdown"] = num((close / pico - 1).min())
         m["drawdown_actual"] = num(close.iloc[-1] / pico.iloc[-1] - 1)
     return m
+
+
+# ---------------------------------------------------------------------------
+# Contexto: histórico de múltiplos, competidores y noticias
+# ---------------------------------------------------------------------------
+RETRASO_PUBLICACION = pd.Timedelta(days=90)  # días entre cierre del ejercicio y publicación de cuentas
+
+
+def acciones_coherentes(acciones_balance, acciones_hoy):
+    """El balance puede no estar ajustado por splits posteriores. Si la cifra difiere
+    de forma absurda de la actual, usamos la actual."""
+    if not acciones_balance:
+        return acciones_hoy
+    if acciones_hoy and not (0.5 <= acciones_balance / acciones_hoy <= 2):
+        return acciones_hoy
+    return acciones_balance
+
+
+def historico_multiples(e: Empresa) -> pd.DataFrame:
+    """Serie semanal de PER, P/VC, P/Ventas, EV/EBITDA y rentabilidad FCF usando el precio de
+    cada día y las cuentas anuales publicadas hasta ese momento."""
+    if e.hist is None or e.hist.empty or e.income is None or e.income.empty:
+        return pd.DataFrame()
+    if (e.moneda_fin or e.moneda) != e.moneda:
+        return pd.DataFrame()
+    close = e.hist["Close"].dropna()
+    acc_hoy = num(e.info.get("sharesOutstanding"))
+    filas = []
+    for col in e.income.columns:
+        fy = pd.Timestamp(col)
+
+        def v(df, *nombres):
+            r = _row(df, *nombres)
+            if r is None or col not in r.index:
+                return None
+            return num(r[col])
+
+        acc = acciones_coherentes(v(e.balance, "Ordinary Shares Number", "Share Issued"), acc_hoy)
+        if not acc:
+            continue
+        fcf = v(e.cashflow, "Free Cash Flow")
+        if fcf is None:
+            cfo, capex = v(e.cashflow, "Operating Cash Flow"), v(e.cashflow, "Capital Expenditure")
+            fcf = cfo + capex if cfo is not None and capex is not None else None
+        filas.append({"desde": fy + RETRASO_PUBLICACION, "acciones": acc,
+                      "ni": v(e.income, "Net Income", "Net Income Common Stockholders"),
+                      "eq": v(e.balance, "Stockholders Equity", "Common Stock Equity"),
+                      "rev": v(e.income, "Total Revenue", "Operating Revenue"),
+                      "ebitda": v(e.income, "EBITDA", "Normalized EBITDA"),
+                      "deuda": v(e.balance, "Total Debt"),
+                      "caja": v(e.balance, "Cash Cash Equivalents And Short Term Investments", "Cash And Cash Equivalents"),
+                      "fcf": fcf})
+    if not filas:
+        return pd.DataFrame()
+    fund = pd.DataFrame(filas).sort_values("desde").set_index("desde")
+    ultimos = close.index.to_series().groupby(close.index.to_period("W")).max()
+    semanal = close.loc[ultimos.values]  # último cierre real de cada semana
+    base = fund.reindex(semanal.index, method="ffill").dropna(subset=["acciones"])
+    if base.empty:
+        return pd.DataFrame()
+    p = semanal.loc[base.index]
+    mcap = p * base["acciones"]
+    pos = lambda x: x.where(x > 0)  # noqa: E731
+    out = pd.DataFrame(index=base.index)
+    out["PER"] = mcap / pos(base["ni"])
+    out["Precio/Valor contable"] = mcap / pos(base["eq"])
+    out["Precio/Ventas"] = mcap / pos(base["rev"])
+    ev = mcap + base["deuda"].fillna(0) - base["caja"].fillna(0)
+    out["EV/EBITDA"] = ev / pos(base["ebitda"])
+    out["Rentabilidad FCF"] = base["fcf"] / mcap
+    return out.astype(float)
+
+
+def competidores(e: Empresa, n: int = 6) -> list[str]:
+    """Empresas grandes de la misma industria según Yahoo (sesgo hacia EE. UU.)."""
+    clave = e.info.get("industryKey")
+    if yf is None or not clave:
+        return []
+    try:
+        top = yf.Industry(clave).top_companies
+    except Exception:
+        return []
+    if top is None or len(top) == 0:
+        return []
+    simbolos = [str(s) for s in list(top.index)]
+    base = e.ticker.split(".")[0]
+    return [s for s in simbolos if s != e.ticker and s.split(".")[0] != base][:n]
+
+
+def noticias(ticker: str, n: int = 12) -> list[dict]:
+    """Últimas noticias de Yahoo Finance: [{titulo, resumen, fuente, fecha, url}]."""
+    if yf is None:
+        return []
+    try:
+        brutas = yf.Ticker(ticker).news or []
+    except Exception:
+        return []
+    out = []
+    for it in brutas[:n]:
+        c = it.get("content", it)
+        prov = c.get("provider") or {}
+        url = (c.get("canonicalUrl") or {}).get("url") or c.get("link") or ""
+        fecha = c.get("pubDate") or c.get("displayTime") or ""
+        if not fecha and c.get("providerPublishTime"):
+            fecha = str(pd.Timestamp(c["providerPublishTime"], unit="s").date())
+        out.append({"titulo": c.get("title", ""), "resumen": c.get("summary") or c.get("description") or "",
+                    "fuente": prov.get("displayName") if isinstance(prov, dict) else c.get("publisher", ""),
+                    "fecha": str(fecha)[:10], "url": url})
+    return [x for x in out if x["titulo"]]

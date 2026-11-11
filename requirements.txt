@@ -3,3 +3,5 @@ yfinance>=0.2.54
 plotly>=5.20
 pandas>=2.1
 numpy>=1.26
+anthropic>=0.40
+pypdf>=4.0

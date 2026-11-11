@@ -36,10 +36,28 @@ Usa el buscador por nombre o escribe el ticker de Yahoo Finance:
 | Londres / Suiza | `ULVR.L`, `NESN.SW` |
 | Japón / Hong Kong | `7203.T`, `0700.HK` |
 
+## Secciones
+
+- **Analizar empresa**: veredicto, valoración (DCF, Graham), histórico de múltiplos, competidores, análisis cualitativo con IA, finanzas, técnico y dividendos.
+- **Escáner**: IBEX 35, Euro Stoxx 50, Dow Jones 30, Nasdaq 100 o tu lista; ranking y filtro de "zona de compra".
+- **Backtest**: puntúa cada empresa en fechas pasadas con la información de entonces y mide la rentabilidad de los 12 meses siguientes.
+
+## Análisis con IA (opcional)
+
+Usa la API de Anthropic. En Streamlit Cloud → *Settings → Secrets* añade:
+
+```toml
+ANTHROPIC_API_KEY = "sk-ant-..."
+CLAVE_ACCESO = "una-clave-que-solo-des-a-quien-quieras"
+```
+
+Quien tenga el código de acceso usa tu clave; el resto puede pegar su propia API key.
+
 ## Archivos
 
-- `app.py`: la interfaz (pestañas, gráficos y barra lateral).
+- `app.py`: punto de entrada y menú de secciones; `vistas/`: cada sección; `comun.py`: piezas compartidas.
 - `datos.py`: descarga de datos y cálculo de métricas (ratios, Piotroski, Altman Z, DCF, Graham, indicadores técnicos).
+- `backtest.py`, `universos.py` (listas de los índices), `ia.py` (análisis con Claude).
 - `scoring.py`: **aquí se decide el veredicto**. Contiene los umbrales por sector, los pesos por defecto y las alertas. Edítalo para afinar el modelo a tu criterio.
 
 ## Aviso
