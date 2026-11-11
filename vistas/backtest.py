@@ -67,23 +67,28 @@ for col, v in zip(k[:3], ["Comprar", "Esperar", "Vender"]):
         col.metric(v, "—")
 k[3].metric("Media del universo", f_pct(val["Rentabilidad 12m"].mean()))
 
+pa = bt.por_año(df)
+años_ok = None
+if not pa.empty and "Comprar" in pa:
+    comp_años = pa[["Comprar", "Universo"]].dropna()
+    años_ok = (int((comp_años["Comprar"] > comp_años["Universo"]).sum()), len(comp_años))
 dif = None
 if "Comprar" in pv.index and "Vender" in pv.index:
     dif = pv.loc["Comprar", "Rentabilidad_media"] - pv.loc["Vender", "Rentabilidad_media"]
+txt_años = (f" *Comprar* batió a la media del universo en **{años_ok[0]} de {años_ok[1]} años**." if años_ok else "")
 if dif is not None and ic_global is not None:
-    if dif > 0.03 and ic_global > 0.05:
+    if dif > 0.03 and ic_global > 0.05 and (not años_ok or años_ok[0] / max(años_ok[1], 1) >= 0.75):
         st.success(f"**El modelo ha funcionado en este periodo**: *Comprar* batió a *Vender* por {f_pct(dif)[:-1]} puntos al año "
-                   f"y la nota se correlaciona positivamente con la rentabilidad posterior ({ic_global:.2f}).")
-    elif dif > 0 and ic_global > 0:
+                   f"y la nota se correlaciona positivamente con la rentabilidad posterior ({ic_global:.2f})." + txt_años)
+    elif dif > 0 and ic_global > 0:  # señal positiva pero débil o irregular
         st.info(f"**Señal débil**: *Comprar* superó a *Vender* por {f_pct(dif)[:-1]} puntos al año, pero la relación entre nota "
-                f"y rentabilidad es floja ({ic_global:.2f}). No es concluyente.")
+                f"y rentabilidad es floja ({ic_global:.2f}), o no acierta todos los años. No es concluyente." + txt_años)
     else:
         st.warning(f"**El modelo NO ha funcionado en este periodo**: *Comprar* no batió a *Vender* "
-                   f"(diferencia {dif * 100:+.1f} puntos/año; correlación {ic_global:.2f}). Revisa los pesos.")
+                   f"(diferencia {dif * 100:+.1f} puntos/año; correlación {ic_global:.2f}). Revisa los pesos." + txt_años)
 
 # Por año ---------------------------------------------------------------------
 st.subheader("Rentabilidad a 12 meses por veredicto y año")
-pa = bt.por_año(df)
 if not pa.empty:
     fig = go.Figure()
     for col in pa.columns:
@@ -91,7 +96,7 @@ if not pa.empty:
                     marker_color=COLOR.get(col, "#222"), text=[f_pct(v) if pd.notna(v) else "" for v in pa[col]],
                     textposition="outside")
     fig.update_layout(barmode="group", height=380, yaxis_tickformat=".0%", margin=dict(l=10, r=10, t=10, b=10),
-                      legend=dict(orientation="h"), xaxis_title="Fecha de la evaluación (rentabilidad de los 12 meses siguientes)")
+                      legend=dict(orientation="h", y=1.12), xaxis_title="Fecha de la evaluación (rentabilidad de los 12 meses siguientes)")
     st.plotly_chart(fig, width="stretch")
 
 c1, c2 = st.columns(2)
@@ -115,7 +120,7 @@ with c2:
                                              for v in ic2["Correlación media"]],
                                text=[f"{v:+.2f} ({a})" for v, a in zip(ic2["Correlación media"], ic2["Años positivos"])],
                                textposition="outside"))
-        fig.update_layout(height=320, margin=dict(l=10, r=40, t=10, b=10), xaxis=dict(range=[-0.5, 0.5]))
+        fig.update_layout(height=320, margin=dict(l=10, r=10, t=10, b=10), xaxis=dict(range=[-0.6, 0.75]))
         st.plotly_chart(fig, width="stretch")
         st.caption("Correlación entre la nota de cada pilar y la rentabilidad posterior (entre paréntesis, años en que fue positiva). "
                    "En bolsa, por encima de +0,05 ya es útil. Los pilares en rojo restaron: plantéate bajarles el peso.")

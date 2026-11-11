@@ -436,16 +436,16 @@ with T_COMP:
         # Posición de la empresa dentro del grupo
         yo = comp[comp["Ticker"] == ticker].iloc[0]
         otros = comp[comp["Ticker"] != ticker]
-        criterios = [("Nota", True, "nota global"), ("PER", False, "PER"), ("EV/EBITDA", False, "EV/EBITDA"),
-                     ("ROE", True, "ROE"), ("Margen op.", True, "margen operativo"),
-                     ("Crec. ingresos", True, "crecimiento"), ("Deuda neta/EBITDA", False, "endeudamiento")]
+        criterios = [("Nota", True, "Nota global"), ("PER", False, "PER (más barato)"), ("EV/EBITDA", False, "EV/EBITDA (más barato)"),
+                     ("ROE", True, "ROE"), ("Margen op.", True, "Margen operativo"),
+                     ("Crec. ingresos", True, "Crecimiento"), ("Deuda neta/EBITDA", False, "Endeudamiento (menos deuda)")]
         frases = []
         for col, alto_mejor, nombre in criterios:
             if pd.isna(yo.get(col)) or otros[col].dropna().empty:
                 continue
             o = otros[col].dropna()
             mejor_que = (o < yo[col]).sum() if alto_mejor else (o > yo[col]).sum()
-            frases.append(f"- **{nombre.capitalize()}**: mejor que {mejor_que} de {len(o)}")
+            frases.append(f"- **{nombre}**: mejor que {mejor_que} de {len(o)}")
         if frases:
             st.markdown(f"**{e.nombre} frente a su competencia:**\n" + "\n".join(frases))
         fig = go.Figure(go.Bar(x=comp["Ticker"], y=comp["Nota"],
