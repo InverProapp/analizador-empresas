@@ -20,7 +20,7 @@ modo = st.sidebar.radio("Buscar por", ["Nombre", "Ticker"], horizontal=True, key
 ticker = None
 if modo == "Nombre":
     q = st.sidebar.text_input("Empresa", key="texto_busqueda", help="Escribe el nombre y elige el ticker de la bolsa que quieras.")
-    resultados = buscar(q, 2) if q else []
+    resultados = buscar(q, 3) if q else []
     if resultados:
         opciones = {f"{r['symbol']} · {r['nombre']} ({r['bolsa']})": r["symbol"] for r in resultados}
         ticker = opciones[st.sidebar.selectbox("Resultados", list(opciones))]

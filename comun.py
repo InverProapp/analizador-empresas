@@ -64,7 +64,7 @@ def cargar(ticker: str) -> datos.Empresa:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def buscar(texto: str, version: int = 2):
+def buscar(texto: str, version: int = 3):
     return datos.buscar(texto)
 
 

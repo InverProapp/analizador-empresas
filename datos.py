@@ -147,6 +147,28 @@ def buscar(texto: str, n: int = 10) -> list[dict]:
             "tipo": q.get("quoteType", ""),
             "_rank": (_prioridad_bolsa(sym, bolsa), orden),
         })
+    # Yahoo a veces solo devuelve cotizaciones secundarias (p. ej. "Inditex" -> ZARA.NE, ITX.VI…).
+    # Buscamos también por el símbolo base para encontrar la bolsa principal (ITX -> ITX.MC).
+    if out and min(r["_rank"][0] for r in out) > 0:
+        vistos = {r["symbol"] for r in out}
+        bases = []
+        for r in out:
+            b = r["symbol"].split(".")[0]
+            if b.isalpha() and b not in bases:
+                bases.append(b)
+        for b in bases[:3]:
+            try:
+                extra = yf.Search(b, max_results=10, news_count=0).quotes
+            except Exception:
+                continue
+            for q in extra:
+                sym = q.get("symbol") or ""
+                if sym.split(".")[0] != b or sym in vistos or q.get("quoteType") not in ("EQUITY", None):
+                    continue
+                vistos.add(sym)
+                out.append({"symbol": sym, "nombre": q.get("longname") or q.get("shortname") or sym,
+                            "bolsa": q.get("exchDisp") or q.get("exchange", ""), "tipo": q.get("quoteType", ""),
+                            "_rank": (_prioridad_bolsa(sym, q.get("exchange", "")), -1)})
     out.sort(key=lambda r: r["_rank"])
     for r in out:
         r.pop("_rank")
@@ -155,8 +177,8 @@ def buscar(texto: str, n: int = 10) -> list[dict]:
 
 # Bolsas principales primero; certificados, mercados secundarios alemanes y OTC al final
 _BOLSAS_PRINCIPALES = {"NMS", "NYQ", "NGM", "NCM", "ASE", "MCE", "PAR", "GER", "LSE", "AMS", "MIL", "EBS",
-                       "BRU", "LIS", "CPH", "STO", "HEL", "OSL", "VIE", "TOR", "JPX", "HKG", "ASX", "SAO", "MEX"}
-_SECUNDARIAS = {"NEO", "TLX", "HAM", "DUS", "MUN", "BER", "STU", "HAN", "FRA", "PNK", "OQB", "OQX", "IOB", "CXE", "AQS"}
+                       "BRU", "LIS", "CPH", "STO", "HEL", "OSL", "TOR", "JPX", "HKG", "ASX", "SAO"}
+_SECUNDARIAS = {"NEO", "TLX", "VIE", "MEX", "HAM", "DUS", "MUN", "BER", "STU", "HAN", "FRA", "PNK", "OQB", "OQX", "IOB", "CXE", "AQS"}
 
 
 def _prioridad_bolsa(simbolo: str, bolsa: str) -> int:
