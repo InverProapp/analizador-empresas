@@ -6,8 +6,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import backtest as bt
-import universos
-from comun import COLOR, GRIS, AZUL, ajustes, cargar_varias, f_pct
+from comun import COLOR, GRIS, ajustes, cargar_varias, f_pct, selector_universo, tiempo_estimado
 
 st.sidebar.title("🧪 Backtest")
 aj = ajustes()
@@ -19,15 +18,9 @@ st.write("Rebobina cada empresa a fechas pasadas (30 de abril de cada año), cal
 st.caption("Usa los pesos y umbrales de la barra lateral: cambia los pesos y vuelve a ejecutar para ver si mejora. "
            "El pilar de analistas no entra (no hay histórico gratuito de sus opiniones).")
 
-c1, c2 = st.columns([1, 2])
-with c1:
-    universo = st.selectbox("Universo", list(universos.UNIVERSOS) + ["Lista personalizada"], key="bt_universo")
-with c2:
-    personal = ""
-    if universo == "Lista personalizada":
-        personal = st.text_area("Tickers", value="ITX.MC, SAN.MC, IBE.MC, TEF.MC, REP.MC, BBVA.MC, AENA.MC, FER.MC",
-                                key="bt_lista")
-tickers = universos.lista(universo, personal)
+universo, tickers = selector_universo("bt", "ITX.MC, SAN.MC, IBE.MC, TEF.MC, REP.MC, BBVA.MC, AENA.MC, FER.MC")
+st.caption(f"{len(tickers)} empresas · descarga ≈ {tiempo_estimado(len(tickers))} la primera vez. "
+           "Cuantas más empresas, más fiable el resultado.")
 
 if st.button(f"🧪 Ejecutar backtest sobre {universo} ({len(tickers)} empresas)", type="primary", disabled=len(tickers) < 8):
     cargadas = cargar_varias(tickers, "Descargando históricos")

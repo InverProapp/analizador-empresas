@@ -69,16 +69,56 @@ def buscar(texto: str, version: int = 3):
 
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=12 * 3600, show_spinner=False, max_entries=4000)
 def cargar_opcional(ticker: str):
-    """Como cargar(), pero devuelve None en vez de fallar (para escáner y backtest)."""
-    try:
-        e = datos.descargar(ticker)
-    except Exception:
-        return None
-    if e.hist is None or e.hist.empty:
-        return None
-    return e
+    """Como cargar(), pero devuelve None en vez de fallar (para escáner y backtest).
+    Se guarda 12 h y es compartido entre todos los usuarios de la web."""
+    import time
+    for intento in range(2):
+        try:
+            e = datos.descargar(ticker)
+            if e.hist is not None and not e.hist.empty:
+                return e
+        except Exception:
+            pass
+        time.sleep(2)  # Yahoo a veces limita peticiones: reintentamos una vez
+    return None
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def tickers_mercado(nombre: str, n: int) -> list[str]:
+    import universos
+    return universos.mercado(nombre, n)
+
+
+def selector_universo(prefijo: str, defecto_lista: str = "ITX.MC, SAN.MC, AAPL, MSFT, MC.PA"):
+    """Selector de empresas: índice, mercado entero de un país o lista propia.
+    Devuelve (etiqueta, lista de tickers)."""
+    import universos
+    tipo = st.radio("¿Qué quieres analizar?", ["Índices", "Mercados por país", "Lista personalizada"],
+                    horizontal=True, key=f"{prefijo}_tipo")
+    if tipo == "Índices":
+        nombre = st.selectbox("Índice", list(universos.UNIVERSOS), key=f"{prefijo}_indice")
+        return nombre, universos.lista(nombre)
+    if tipo == "Mercados por país":
+        c1, c2 = st.columns([2, 1])
+        nombre = c1.selectbox("Mercado", list(universos.MERCADOS), key=f"{prefijo}_mercado")
+        n = c2.select_slider("Empresas (las más grandes)", [25, 50, 100, 200, 300, 500, 750, 1000], value=100,
+                             key=f"{prefijo}_n")
+        try:
+            with st.spinner("Obteniendo la lista de empresas de Yahoo…"):
+                tks = tickers_mercado(nombre, n)
+        except Exception as ex:
+            st.error(f"Yahoo no devolvió la lista de empresas ({type(ex).__name__}). Prueba en un momento.")
+            tks = []
+        return f"{nombre} · top {len(tks)}", tks
+    texto = st.text_area("Tickers (separados por comas)", value=defecto_lista, key=f"{prefijo}_lista")
+    return "Lista personalizada", universos.lista("Lista personalizada", texto)
+
+
+def tiempo_estimado(n: int) -> str:
+    seg = n * 0.9  # ~0,9 s por empresa con 8 descargas en paralelo, la primera vez
+    return f"{seg / 60:.0f} min" if seg >= 90 else f"{seg:.0f} s"
 
 
 @st.cache_data(ttl=6 * 3600, show_spinner=False)
@@ -97,7 +137,7 @@ def cargar_varias(tickers, etiqueta="Descargando"):
 
     def prog(frac, t):
         barra.progress(frac, text=f"{etiqueta} {t} ({frac * 100:.0f}%)")
-    out = bt.descargar_varias(tickers, cargar_opcional, hilos=6, progreso=prog)
+    out = bt.descargar_varias(tickers, cargar_opcional, hilos=8, progreso=prog)
     barra.empty()
     return out
 

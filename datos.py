@@ -114,11 +114,16 @@ def descargar(ticker: str, periodo_hist: str = "6y") -> Empresa:
             return defecto
 
     e.info = intento("info", lambda: t.info, {}) or {}
-    e.hist = intento("histórico", lambda: t.history(period=periodo_hist, auto_adjust=False), pd.DataFrame())
+    e.hist = intento("histórico", lambda: t.history(period=periodo_hist, auto_adjust=False, actions=True), pd.DataFrame())
     e.income = _ordenar(intento("cuenta de resultados", lambda: t.income_stmt, pd.DataFrame()))
     e.balance = _ordenar(intento("balance", lambda: t.balance_sheet, pd.DataFrame()))
     e.cashflow = _ordenar(intento("flujos de caja", lambda: t.cashflow, pd.DataFrame()))
-    e.dividends = intento("dividendos", lambda: t.dividends, pd.Series(dtype=float))
+    # Los dividendos vienen en el propio histórico (columna Dividends): ahorramos una petición
+    if e.hist is not None and not e.hist.empty and "Dividends" in e.hist:
+        d = e.hist["Dividends"]
+        e.dividends = d[d > 0]
+    else:
+        e.dividends = intento("dividendos", lambda: t.dividends, pd.Series(dtype=float))
     if e.hist is not None and not e.hist.empty and e.hist.index.tz is not None:
         e.hist.index = e.hist.index.tz_localize(None)
     if e.dividends is not None and len(e.dividends) and getattr(e.dividends.index, "tz", None) is not None:

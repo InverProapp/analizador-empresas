@@ -41,6 +41,62 @@ UNIVERSOS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Mercados enteros por país (buscador de acciones de Yahoo, ordenado por capitalización)
+# ---------------------------------------------------------------------------
+MERCADOS = {
+    "🇪🇸 España (Mercado Continuo)": ("es", ["MCE"]),
+    "🇺🇸 Estados Unidos": ("us", ["NMS", "NYQ", "NGM", "NCM", "ASE"]),
+    "🇩🇪 Alemania": ("de", ["GER"]),
+    "🇫🇷 Francia": ("fr", ["PAR"]),
+    "🇬🇧 Reino Unido": ("gb", ["LSE"]),
+    "🇮🇹 Italia": ("it", ["MIL"]),
+    "🇳🇱 Países Bajos": ("nl", ["AMS"]),
+    "🇨🇭 Suiza": ("ch", ["EBS"]),
+    "🇸🇪 Suecia": ("se", ["STO"]),
+    "🇩🇰 Dinamarca": ("dk", ["CPH"]),
+    "🇳🇴 Noruega": ("no", ["OSL"]),
+    "🇫🇮 Finlandia": ("fi", ["HEL"]),
+    "🇧🇪 Bélgica": ("be", ["BRU"]),
+    "🇵🇹 Portugal": ("pt", ["LIS"]),
+    "🇦🇹 Austria": ("at", ["VIE"]),
+    "🇮🇪 Irlanda": ("ie", ["ISE"]),
+    "🇨🇦 Canadá": ("ca", ["TOR"]),
+    "🇯🇵 Japón": ("jp", ["JPX"]),
+}
+
+
+def mercado(nombre: str, n: int = 100) -> list[str]:
+    """Las `n` mayores empresas (por capitalización) de un mercado, vía yf.screen."""
+    import yfinance as yf
+    from yfinance import EquityQuery
+
+    region, bolsas = MERCADOS[nombre]
+    filtro_bolsa = EquityQuery("is-in", ["exchange", *bolsas]) if len(bolsas) > 1 else EquityQuery("eq", ["exchange", bolsas[0]])
+    consulta = EquityQuery("and", [EquityQuery("eq", ["region", region]), filtro_bolsa,
+                                   EquityQuery("gt", ["intradaymarketcap", 0])])
+    simbolos, nombres, offset = [], set(), 0
+    while len(simbolos) < n:
+        tam = min(250, n - len(simbolos) + 25)  # algo de margen por duplicados
+        res = yf.screen(consulta, offset=offset, size=tam, sortField="intradaymarketcap", sortAsc=False)
+        quotes = (res or {}).get("quotes", [])
+        if not quotes:
+            break
+        for q in quotes:
+            sym = q.get("symbol")
+            nom = (q.get("longName") or q.get("shortName") or sym or "").lower()
+            if not sym or q.get("quoteType", "EQUITY") != "EQUITY" or nom in nombres:
+                continue  # fuera duplicados (p. ej. GOOG/GOOGL, acciones A/B)
+            nombres.add(nom)
+            simbolos.append(sym)
+            if len(simbolos) >= n:
+                break
+        offset += len(quotes)
+        if len(quotes) < tam:
+            break
+    return simbolos
+
+
 def lista(nombre: str, personalizada: str = "") -> list[str]:
     if nombre == "Lista personalizada":
         return [t.strip().upper() for t in personalizada.replace(";", ",").replace("\n", ",").split(",") if t.strip()]
