@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from comun import (COLOR, GRIS, ajustes, analizar, cargar_varias, config_columnas, fila_resumen, selector_universo,
+from comun import (COLOR, GRIS, abrir_empresa, ajustes, analizar, cargar_varias, config_columnas, fila_resumen, selector_universo,
                    tiempo_estimado)
 
 st.sidebar.title("📡 Escáner")
@@ -83,9 +83,9 @@ if not d.empty:
     st.plotly_chart(fig, width="stretch")
 
 st.subheader("Ver una empresa en detalle")
-c1, c2 = st.columns([3, 1])
+c1, c2, c3 = st.columns([3, 1, 1])
 elegida = c1.selectbox("Empresa", [f"{t} · {n}" for t, n in zip(df["Ticker"], df["Empresa"])], label_visibility="collapsed")
 if c2.button("Abrir análisis →"):
-    st.session_state["modo_busqueda"] = "Ticker"
-    st.session_state["ticker_directo"] = elegida.split(" · ")[0]
-    st.switch_page("vistas/empresa.py")
+    abrir_empresa(elegida.split(" · ")[0])
+if c3.button("Simular →"):
+    abrir_empresa(elegida.split(" · ")[0], "vistas/simulador.py")

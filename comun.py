@@ -237,3 +237,36 @@ def secreto(nombre: str):
         return st.secrets.get(nombre)
     except Exception:
         return None
+
+
+
+def selector_empresa(titulo: str = "📊 Analizador"):
+    """Buscador de empresa en la barra lateral. La empresa elegida se mantiene al cambiar de sección."""
+    st.sidebar.title(titulo)
+    modo = _persistente(st.sidebar.radio, "Buscar por", "modo_busqueda", "Nombre", options=["Nombre", "Ticker"],
+                        horizontal=True)
+    if modo == "Nombre":
+        q = _persistente(st.sidebar.text_input, "Empresa", "texto_busqueda", "Inditex",
+                         help="Escribe el nombre y elige el ticker de la bolsa que quieras.")
+        resultados = buscar(q, 4) if q else []
+        if not resultados:
+            if q:
+                st.sidebar.info("Sin resultados. Prueba con el ticker directamente.")
+            return None
+        opciones = {f"{r['symbol']} · {r['nombre']} ({r['bolsa']})": r["symbol"] for r in resultados}
+        etiquetas = list(opciones)
+        guardada = st.session_state.get("_guardado_resultado")
+        if guardada not in etiquetas:
+            st.session_state["_guardado_resultado"] = etiquetas[0]
+        elegida = _persistente(st.sidebar.selectbox, "Resultados", "resultado", etiquetas[0], options=etiquetas)
+        return opciones[elegida]
+    tk = _persistente(st.sidebar.text_input, "Ticker de Yahoo Finance", "ticker_directo", "ITX.MC",
+                      help="Ejemplos: AAPL, MSFT, SAN.MC, ITX.MC, MC.PA, SAP.DE, 7203.T, NESN.SW")
+    return tk.strip().upper() or None
+
+
+def abrir_empresa(tk: str, pagina: str = "vistas/empresa.py"):
+    """Abre una empresa concreta en otra sección (desde el escáner, por ejemplo)."""
+    st.session_state["_guardado_modo_busqueda"] = "Ticker"
+    st.session_state["_guardado_ticker_directo"] = tk
+    st.switch_page(pagina)
