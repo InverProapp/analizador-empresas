@@ -29,7 +29,8 @@ def _rivales(ticker: str, n: int) -> list[str]:
 def rivales(ticker: str, n: int = 14) -> list[str]:
     try:
         return _rivales(ticker, n)
-    except Exception:
+    except Exception as ex:
+        st.session_state["_sec_error"] = f"{type(ex).__name__}: {ex}"
         return []
 
 
@@ -46,8 +47,7 @@ if modo == "A partir de una empresa":
             lista = [base] + rivales(base, n)
         if len(lista) < 3:
             st.error("Yahoo no da competidores para esta empresa. Prueba con el otro modo.")
-            if datos.ULTIMO_ERROR_COMPETIDORES:
-                st.caption(f"Detalle técnico: {datos.ULTIMO_ERROR_COMPETIDORES[:300]}")
+            st.caption(f"Detalle técnico: {st.session_state.get('_sec_error', '')} {datos.ULTIMO_ERROR_COMPETIDORES[:300]}")
             st.stop()
         cargadas = cargar_varias(lista, "Analizando")
         filas = []
