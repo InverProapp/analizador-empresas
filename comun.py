@@ -58,9 +58,35 @@ def color_nota(n):
 # ---------------------------------------------------------------------------
 # Datos cacheados
 # ---------------------------------------------------------------------------
+class _Incompleta(Exception):
+    """Yahoo devolvió la empresa a medias (suele ser un límite de peticiones): no se guarda en caché."""
+    def __init__(self, e):
+        super().__init__("datos incompletos")
+        self.empresa = e
+
+
+def _descargar_completa(ticker: str) -> datos.Empresa:
+    import time
+    e = None
+    for intento in range(2):
+        e = datos.descargar(ticker)
+        if e.info and e.hist is not None and not e.hist.empty:
+            return e
+        time.sleep(1.5)
+    raise _Incompleta(e)
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
+def _cargar(ticker: str) -> datos.Empresa:
+    return _descargar_completa(ticker)
+
+
 def cargar(ticker: str) -> datos.Empresa:
-    return datos.descargar(ticker)
+    """Empresa completa (1 h en caché, compartida). Si Yahoo la da a medias, se usa sin guardarla para reintentar luego."""
+    try:
+        return _cargar(ticker)
+    except _Incompleta as ex:
+        return ex.empresa
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -70,19 +96,20 @@ def buscar(texto: str, version: int = 4):
 
 
 @st.cache_data(ttl=12 * 3600, show_spinner=False, max_entries=4000)
+def _cargar_opcional(ticker: str):
+    return _descargar_completa(ticker)
+
+
 def cargar_opcional(ticker: str):
     """Como cargar(), pero devuelve None en vez de fallar (para escáner y backtest).
-    Se guarda 12 h y es compartido entre todos los usuarios de la web."""
-    import time
-    for intento in range(2):
-        try:
-            e = datos.descargar(ticker)
-            if e.hist is not None and not e.hist.empty:
-                return e
-        except Exception:
-            pass
-        time.sleep(2)  # Yahoo a veces limita peticiones: reintentamos una vez
-    return None
+    Se guarda 12 h y es compartido entre todos los usuarios de la web; lo incompleto no se guarda."""
+    try:
+        return _cargar_opcional(ticker)
+    except _Incompleta as ex:
+        e = ex.empresa
+        return e if e is not None and e.hist is not None and not e.hist.empty else None
+    except Exception:
+        return None
 
 
 @st.cache_data(ttl=24 * 3600, show_spinner=False)

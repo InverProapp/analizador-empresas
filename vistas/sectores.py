@@ -47,7 +47,10 @@ if modo == "A partir de una empresa":
             lista = [base] + rivales(base, n)
         if len(lista) < 3:
             st.error("Yahoo no da competidores para esta empresa. Prueba con el otro modo.")
-            st.caption(f"Detalle técnico: {st.session_state.get('_sec_error', '')} {datos.ULTIMO_ERROR_COMPETIDORES[:300]}")
+            _e = cargar(base)
+            if not _e.info:
+                st.caption("Yahoo no ha devuelto la ficha de la empresa (suele ser un límite temporal de peticiones). "
+                           "Prueba otra vez en un par de minutos. " + "; ".join(_e.errores)[:200])
             st.stop()
         cargadas = cargar_varias(lista, "Analizando")
         filas = []
