@@ -720,3 +720,65 @@ def precios_historicos(ticker: str) -> pd.DataFrame:
     if h is not None and not h.empty and h.index.tz is not None:
         h.index = h.index.tz_localize(None)
     return h
+
+
+def eventos(ticker: str) -> dict:
+    """Próximos eventos y resultados pasados de una empresa (Yahoo Finance).
+
+    Devuelve {"proximos": [{fecha, tipo, texto, impacto}], "consenso": {...}, "resultados": DataFrame}
+    resultados: una fila por presentación con BPA esperado, BPA real y sorpresa (%).
+    """
+    out = {"proximos": [], "consenso": {}, "resultados": pd.DataFrame()}
+    if yf is None:
+        return out
+    t = yf.Ticker(ticker)
+    try:
+        cal = t.calendar or {}
+    except Exception:
+        cal = {}
+
+    def _fecha(x):
+        try:
+            f = pd.Timestamp(x)
+            return f.tz_localize(None).normalize() if f.tzinfo else f.normalize()
+        except Exception:
+            return None
+
+    fechas_res = cal.get("Earnings Date") or []
+    if not isinstance(fechas_res, (list, tuple)):
+        fechas_res = [fechas_res]
+    fechas_res = [f for f in (_fecha(x) for x in fechas_res) if f is not None]
+    if fechas_res:
+        texto = "Presentación de resultados"
+        if len(fechas_res) > 1 and fechas_res[-1] != fechas_res[0]:
+            texto += f" (entre el {fechas_res[0]:%d/%m} y el {fechas_res[-1]:%d/%m}, fecha sin confirmar)"
+        out["proximos"].append({"fecha": fechas_res[0], "tipo": "Resultados", "texto": texto, "impacto": "Alto"})
+    for clave, tipo, texto, imp in (("Ex-Dividend Date", "Dividendo", "Fecha ex-dividendo (hay que tener la acción el día antes)", "Medio"),
+                                    ("Dividend Date", "Dividendo", "Pago del dividendo", "Bajo")):
+        f = _fecha(cal.get(clave)) if cal.get(clave) is not None else None
+        if f is not None:
+            out["proximos"].append({"fecha": f, "tipo": tipo, "texto": texto, "impacto": imp})
+    out["consenso"] = {k: num(cal.get(k)) for k in ("Earnings Average", "Earnings Low", "Earnings High",
+                                                     "Revenue Average", "Revenue Low", "Revenue High")}
+    try:
+        ed = t.get_earnings_dates(limit=16)
+    except Exception:
+        ed = None
+    if ed is not None and not ed.empty:
+        ed = ed.copy()
+        idx = pd.to_datetime(ed.index)
+        ed.index = (idx.tz_localize(None) if idx.tz is not None else idx).normalize()
+        ed = ed.rename(columns={"EPS Estimate": "esperado", "Reported EPS": "real", "Surprise(%)": "sorpresa"})
+        for c in ("esperado", "real", "sorpresa"):
+            if c not in ed:
+                ed[c] = np.nan
+        ed = ed[["esperado", "real", "sorpresa"]].sort_index(ascending=False)
+        hoy = pd.Timestamp.today().normalize()
+        futuras = ed[(ed.index >= hoy) & ed["real"].isna()]
+        if not fechas_res and len(futuras):
+            out["proximos"].append({"fecha": futuras.index.min(), "tipo": "Resultados",
+                                    "texto": "Presentación de resultados", "impacto": "Alto"})
+        if out["consenso"].get("Earnings Average") is None and len(futuras):
+            out["consenso"]["Earnings Average"] = num(futuras.sort_index()["esperado"].iloc[0])
+        out["resultados"] = ed[ed["real"].notna()]
+    return out

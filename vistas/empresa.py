@@ -53,6 +53,12 @@ with c_tit:
     sector_es = sc.SECTORES_ES.get(e.sector, e.sector)
     st.caption(f"**{e.ticker}** · {sector_es} · {e.info.get('industry', '')} · {e.info.get('country', '')} · "
                f"{e.info.get('exchange', '')} · moneda {mon}")
+    import tesis as _ts
+    _t = _ts.de(ticker) if us.cargado() else None
+    if _t:
+        _mk = _ts.marcador(_t, m, r)
+        st.caption(f"📌 Mi tesis **{_t['posicion'].lower()}** · {_mk['salud']} · {_mk['ok']}/{_mk['n']} pilares"
+                   + (" · 🧐 toca revisarla" if _mk["revisar"] else "") + " — en la pestaña *Tesis y eventos*")
 with c_acc:
     a1, a2, a3 = st.columns(3)
     fav = us.es_favorito(ticker)
@@ -227,10 +233,10 @@ if e.errores:
 # ---------------------------------------------------------------------------
 # Análisis con IA desactivado de momento: pon MOSTRAR_IA = True para recuperarlo (requiere API key de Anthropic)
 MOSTRAR_IA = False
-nombres_tabs = ["🧭 Resumen", "💶 Valoración", "🕰️ Histórico", "🆚 Competidores"] + (
+nombres_tabs = ["🧭 Resumen", "📌 Tesis y eventos", "💶 Valoración", "🕰️ Histórico", "🆚 Competidores"] + (
     ["🤖 Análisis IA"] if MOSTRAR_IA else []) + ["📈 Finanzas", "📉 Técnico", "💸 Dividendos", "📘 Metodología"]
 tabs = dict(zip(nombres_tabs, st.tabs(nombres_tabs)))
-T_RES, T_VAL, T_HIS, T_COMP = (tabs[n] for n in nombres_tabs[:4])
+T_RES, T_TESIS, T_VAL, T_HIS, T_COMP = (tabs[n] for n in nombres_tabs[:5])
 T_FIN, T_TEC, T_DIV, T_MET = (tabs[n] for n in nombres_tabs[-4:])
 T_IA = tabs.get("🤖 Análisis IA")
 
@@ -632,6 +638,11 @@ if MOSTRAR_IA:
         if st.session_state.get(f"ia_{ticker}"):
             st.markdown(st.session_state[f"ia_{ticker}"])
             st.caption("Generado por IA a partir de datos públicos. Puede contener errores: contrasta lo importante. No es asesoramiento financiero.")
+
+# Tesis y eventos ---------------------------------------------------------------
+with T_TESIS:
+    import tesis_ui
+    tesis_ui.pestaña(ticker, e.nombre, e, m, r, mon)
 
 # Metodología -----------------------------------------------------------------
 with T_MET:

@@ -1,4 +1,4 @@
-"""Datos personales de cada usuario (favoritos, alertas y notas).
+"""Datos personales de cada usuario (favoritos, alertas, notas, tesis y eventos propios).
 
 Se guardan en el navegador de quien usa la web (localStorage), así cada persona tiene los
 suyos sin necesidad de cuentas. No se ven desde otro navegador o dispositivo.
@@ -30,7 +30,7 @@ export default function(component) {
 
 _componente = st.components.v2.component("almacen_usuario", js=_JS) if hasattr(st, "components") and hasattr(st.components, "v2") else None
 
-VACIO = {"favoritos": {}, "alertas": [], "notas": {}}
+VACIO = {"favoritos": {}, "alertas": [], "notas": {}, "tesis": {}, "eventos": []}
 
 
 def montar():
@@ -251,3 +251,22 @@ def comprobar(alertas: list, analizar_fn=None) -> dict:
             met, res = analisis[a["ticker"]]
         estados[a["id"]] = evaluar(a, hist, res, met)
     return estados
+
+
+# ---------------------------------------------------------------------------
+# Eventos propios (catalizadores que apunta el usuario: junta, lanzamiento, regulador…)
+# ---------------------------------------------------------------------------
+def crear_evento(ticker: str, fecha: str, texto: str, impacto: str = "Medio"):
+    datos().setdefault("eventos", []).append({"id": uuid.uuid4().hex[:8], "ticker": ticker, "fecha": fecha,
+                                              "texto": texto, "impacto": impacto, "resultado": ""})
+    guardar()
+
+
+def borrar_evento(id_: str):
+    d = datos()
+    d["eventos"] = [e for e in d.get("eventos", []) if e["id"] != id_]
+    guardar()
+
+
+def eventos_de(ticker: str | None = None) -> list:
+    return [e for e in datos().get("eventos", []) if ticker is None or e["ticker"] == ticker]

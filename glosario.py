@@ -68,6 +68,18 @@ G = {
                "Si la de 50 está por encima de la de 200 la tendencia es alcista. Cruce dorado = la 50 cruza hacia arriba; cruce de la muerte = hacia abajo."),
     "volatilidad": ("Volatilidad", "Cuánto oscila el precio, en % anual.", "Menos del 20% es tranquila; más del 40%, muy movida."),
     "drawdown": ("Caída desde máximos (drawdown)", "Cuánto ha caído desde su punto más alto.", "La peor caída histórica indica cuánto dolor hay que aguantar."),
+    "tesis": ("Tesis de inversión", "Por qué crees que una acción subirá (alcista) o bajará (bajista), con los pilares que tienen que seguir siendo ciertos.",
+              "Debe poder fallar: si nada puede demostrar que te equivocas, no es una tesis. Revísala cada trimestre y apunta también lo que va en contra."),
+    "catalizador": ("Catalizador", "Un evento con fecha que puede mover el precio: resultados, dividendo, decisión de tipos, junta, regulador…",
+                    "Conviene decidir antes qué harás si sale bien o mal, para no reaccionar en caliente."),
+    "bpa": ("BPA (beneficio por acción)", "Beneficio neto de la empresa dividido entre el número de acciones.",
+            "Es la cifra que más mira el mercado en cada presentación de resultados, comparándola con lo que esperaban los analistas."),
+    "sorpresa": ("Sorpresa de resultados", "Diferencia entre el BPA publicado y el que esperaban los analistas, en %.",
+                 "Batir suele hacer subir la acción y fallar, caer; pero si ya se esperaba algo muy bueno, a veces cae aunque bata."),
+    "stop": ("Precio de salida (stop)", "Precio en el que decides de antemano que te has equivocado y vendes.",
+             "Ponerlo antes de comprar evita que una pérdida pequeña se convierta en una grande por no querer reconocer el error."),
+    "recompensa_riesgo": ("Recompensa / riesgo", "Lo que puedes ganar hasta el objetivo dividido entre lo que puedes perder hasta el stop.",
+                          "Por encima de 2:1 suele merecer la pena: aunque aciertes solo la mitad de las veces, ganas dinero."),
 }
 
 

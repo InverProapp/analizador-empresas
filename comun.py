@@ -291,3 +291,12 @@ def metrica(col, etiqueta: str, valor, delta=None, clave: str | None = None, del
             st.metric(etiqueta, valor, delta, delta_color=delta_color, label_visibility="collapsed")
         else:
             st.metric(etiqueta, valor, delta, delta_color=delta_color, help=ayuda)
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def eventos_empresa(ticker: str) -> dict:
+    """Próximos eventos (resultados, dividendos) y sorpresas de resultados pasadas. 6 h, compartido."""
+    try:
+        return datos.eventos(ticker)
+    except Exception:
+        return {"proximos": [], "consenso": {}, "resultados": pd.DataFrame()}

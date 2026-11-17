@@ -5,13 +5,14 @@ import pandas as pd
 import streamlit as st
 
 import scoring as sc
+import tesis as ts
 import usuario as us
 from comun import COLOR, abrir_empresa, ajustes, analizar, cargar_opcional, f_num, f_pct
 
 st.sidebar.title("⭐ Mi lista")
 aj = ajustes()
 
-st.title("⭐ Mi lista y alertas")
+st.title("⭐ Mi lista, tesis y alertas")
 st.caption("Tus favoritos, alertas y notas se guardan **en este navegador**: cada persona que use la web tiene los suyos. "
            "No se ven desde otro navegador o dispositivo.")
 
@@ -21,7 +22,8 @@ if not us.cargado():
 
 d = us.datos()
 favs, alertas, notas = d["favoritos"], d["alertas"], d["notas"]
-if not favs and not alertas and not notas:
+tesis_d = d.get("tesis", {})
+if not favs and not alertas and not notas and not tesis_d:
     st.info("Todavía no tienes nada guardado. En **🔎 Analizar empresa** pulsa **☆ Añadir a favoritos** para seguir una empresa, "
             "o **🔔 Alertas** para que te avise cuando el precio llegue a donde quieras.")
     st.stop()
@@ -59,6 +61,14 @@ if favs:
         n_al = [a for a in alertas if a["ticker"] == tk]
         fila["Alertas"] = f"{sum(1 for a in n_al if a.get('disparada'))} cumplidas de {len(n_al)}" if n_al else ""
         fila["Nota personal"] = "📝" if notas.get(tk) else ""
+        if tk in tesis_d:
+            try:
+                mk = ts.marcador(tesis_d[tk], m, r)
+                fila["Mi tesis"] = f"{mk['salud']} {mk['ok']}/{mk['n']}" + (" 🧐" if mk["revisar"] else "")
+            except Exception:
+                fila["Mi tesis"] = "📌"
+        else:
+            fila["Mi tesis"] = ""
         filas.append(fila)
         barra.progress((k + 1) / len(favs), text=f"Actualizando {tk}…")
     barra.empty()
@@ -77,6 +87,35 @@ if favs:
     if c3.button("🎯 Simular", width="stretch"):
         abrir_empresa(elegida, "vistas/simulador.py")
     c4.button("✖ Quitar", width="stretch", on_click=us.alternar_favorito, args=(elegida, favs[elegida].get("nombre"), None))
+
+# ---------------------------------------------------------------------------
+# Tesis
+# ---------------------------------------------------------------------------
+if tesis_d:
+    st.subheader(f"📌 Mis tesis ({len(tesis_d)})")
+    filas = []
+    for tk, t in tesis_d.items():
+        try:
+            m, r = analisis(tk)
+        except Exception:
+            m, r = None, None
+        mk = ts.marcador(t, m, r)
+        filas.append({"Ticker": tk, "Empresa": t.get("nombre", favs.get(tk, {}).get("nombre", "")), "Posición": t.get("posicion"),
+                      "Estado": mk["salud"], "Pilares": f"{mk['ok']} de {mk['n']}", "Convicción": t.get("conviccion"),
+                      "Hasta objetivo": mk["hasta_objetivo"], "Hasta stop": mk["hasta_stop"],
+                      "Revisada hace": f"{mk['dias_sin_revisar']} días" + (" 🧐" if mk["revisar"] else "") if mk["dias_sin_revisar"] is not None else "",
+                      "La idea": t.get("enunciado", "")})
+    st.dataframe(pd.DataFrame(filas), hide_index=True, width="stretch", column_config={
+        "Hasta objetivo": st.column_config.NumberColumn(format="percent"),
+        "Hasta stop": st.column_config.NumberColumn(format="percent"),
+        "La idea": st.column_config.TextColumn(width="large"),
+    })
+    if any(f["Revisada hace"].endswith("🧐") for f in filas):
+        st.caption("🧐 = hace más de 3 meses que no la revisas. Ábrela en *Analizar empresa → Tesis y eventos*.")
+    c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
+    sel_t = c1.selectbox("Tesis", list(tesis_d), format_func=lambda t: f"{t} · {tesis_d[t].get('nombre', '')}", key="tesis_sel")
+    if c2.button("📌 Abrir tesis", width="stretch"):
+        abrir_empresa(sel_t)
 
 # ---------------------------------------------------------------------------
 # Alertas
