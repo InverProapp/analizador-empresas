@@ -702,6 +702,7 @@ def competidores(e: Empresa, n: int = 6) -> list[str]:
     if clave:
         try:
             top = yf.Industry(clave).top_companies
+            errores.append(f"industria {clave}: {0 if top is None else len(top)} resultados")
             if top is not None and len(top):
                 add(top.index)
         except Exception as ex:
@@ -715,6 +716,7 @@ def competidores(e: Empresa, n: int = 6) -> list[str]:
             for region in [r for r in (pais, "us") if r]:
                 q = EQ("and", [EQ("eq", ["industry", e.info["industry"]]), EQ("eq", ["region", region])])
                 r = yf.screen(q, sortField="intradaymarketcap", sortAsc=False, size=max(n, 10))
+                errores.append(f"búsqueda {region}: {len((r or {}).get('quotes', []))} resultados")
                 add(x.get("symbol") for x in (r or {}).get("quotes", []))
                 if len(vistos) >= n:
                     break
