@@ -8,6 +8,7 @@ import streamlit as st
 
 import aprende as ap
 import datos
+import graficos
 from comun import abrir_empresa, cargar, conclusion, elegir_empresa, empresa_actual, f_num, f_pct
 
 st.title("📚 Aprende trading")
@@ -265,10 +266,8 @@ with tabs[6]:
 with tabs[7]:
     conclusion("Pon a prueba los patrones en una empresa real: la web busca velas típicas y días de volumen anormal en su histórico y "
                "mide **qué pasó después**. Verás que ningún patrón acierta siempre: por eso se confirman y se combinan.")
-    c1, c2 = st.columns([2, 1], vertical_alignment="top")
-    with c1:
-        tk = elegir_empresa("ap", etiqueta="Empresa", defecto=empresa_actual("Inditex"))
-    ver = c2.segmented_control("Ver los últimos", ["3M", "6M", "1A"], default="6M", key="ap_periodo") or "6M"
+    tk = elegir_empresa("ap", etiqueta="Empresa", defecto=empresa_actual("Inditex"), en_linea=True)
+    ver = "6M"
     if tk:
         try:
             e = cargar(tk)
@@ -282,29 +281,16 @@ with tabs[7]:
             if det.attrs.get("aviso"):
                 st.info("Yahoo no da bien los precios de apertura de esta acción (aparecen iguales al cierre), así que solo se "
                         "marcan los días de volumen anormal. Prueba con una empresa de un mercado grande.")
-            n_dias = {"3M": 63, "6M": 126, "1A": 252}[ver]
-            v = h.iloc[-n_dias:]
-            recientes = det[det["Fecha"] >= v.index[0]]
-            from plotly.subplots import make_subplots
-            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
-            fig.add_candlestick(x=v.index, open=v["Open"], high=v["High"], low=v["Low"], close=v["Close"], name="Precio",
-                                increasing_line_color=ap.VERDE, decreasing_line_color=ap.ROJO, row=1, col=1)
-            fig.add_bar(x=v.index, y=v["Volume"], marker_color=ap.GRIS, name="Volumen", row=2, col=1)
             simbolos = {"alcista": ("triangle-up", ap.VERDE), "bajista": ("triangle-down", ap.ROJO), "neutral": ("diamond", ap.NARANJA)}
-            for sesgo, (sim, col) in simbolos.items():
-                g = recientes[recientes["Sesgo"] == sesgo]
-                if g.empty:
-                    continue
-                ys = [float(v.loc[f, "Low"]) * 0.985 if sesgo == "alcista" else float(v.loc[f, "High"]) * 1.015 for f in g["Fecha"]]
-                fig.add_scatter(x=g["Fecha"], y=ys, mode="markers", marker=dict(symbol=sim, size=11, color=col),
-                                name=f"Patrón {sesgo}", text=g["Patrón"], hovertemplate="%{x|%d/%m/%Y}: %{text}<extra></extra>", row=1, col=1)
-            fig.update_layout(height=520, xaxis_rangeslider_visible=False, margin=dict(l=4, r=4, t=10, b=4),
-                              legend=dict(orientation="h", y=1.05))
-            fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"])])
-            st.markdown(f"#### {e.nombre}: patrones de los últimos {ver}")
-            st.plotly_chart(fig, width="stretch")
+            marcas = pd.DataFrame([{
+                "x": f, "y": float(h.loc[f, "Low"]) * 0.985 if s_ == "alcista" else float(h.loc[f, "High"]) * 1.015,
+                "texto": f"{p_} ({s_})", "simbolo": simbolos[s_][0], "color": simbolos[s_][1], "grupo": f"Patrón {s_}"}
+                for f, p_, s_ in zip(det["Fecha"], det["Patrón"], det["Sesgo"])])
+            st.markdown(f"#### {e.nombre}: patrones en el gráfico")
+            desde, hasta = graficos.grafico_precio("ap", tk, e.moneda, completo=True, marcas=marcas, periodo_def=ver, h_base=h)
             st.caption("▲ verde = patrón alcista · ▼ rojo = bajista · ◆ naranja = indecisión o volumen anormal. "
-                       "Pasa el ratón por encima para ver cuál es.")
+                       "Pasa el ratón por encima para ver cuál es. Con velas semanales o mensuales, las marcas siguen siendo de días concretos.")
+            recientes = det[(det["Fecha"] >= desde) & (det["Fecha"] <= hasta)] if desde is not None else det
             if not recientes.empty:
                 st.dataframe(recientes.sort_values("Fecha", ascending=False), hide_index=True, width="stretch", column_config={
                     "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"), "Cierre": st.column_config.NumberColumn(format="%.2f"),

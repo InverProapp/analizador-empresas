@@ -6,6 +6,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+import graficos
+
 import datos
 import scoring as sc
 from comun import (COLOR, GRIS, abrir_empresa, ajustes, analizar, cargar, cargar_varias, config_columnas, f_pct, fila_resumen,
@@ -158,7 +160,7 @@ with t_estr:
                                hovertemplate="%{y}: %{x:.1f}% de las ventas<extra></extra>"))
         fig.update_layout(height=max(260, 26 * len(v)), margin=dict(l=10, r=10, t=10, b=10), xaxis_title="% de las ventas del grupo",
                           yaxis=dict(autorange="reversed"), separators=",.")
-        st.plotly_chart(fig, width="stretch")
+        graficos.mostrar(fig, fechas=False)
 
     # 3. Competencia: crecimiento vs rentabilidad --------------------------------------
     st.markdown("#### 🏁 Competencia: quién crece y quién gana dinero")
@@ -180,7 +182,7 @@ with t_estr:
             fig.add_hline(y=med["Margen op."] * 100, line=dict(color=GRIS, dash="dot"))
         fig.update_layout(height=460, xaxis_title="Crecimiento de ventas (%)", yaxis_title="Margen operativo (%)",
                           margin=dict(l=10, r=10, t=30, b=10), legend=dict(orientation="h"), separators=",.")
-        st.plotly_chart(fig, width="stretch")
+        graficos.mostrar(fig, fechas=False)
         st.caption("Tamaño de la burbuja = capitalización. Líneas = mediana del sector. Arriba a la derecha: crecen más y ganan más "
                    "que el resto (suelen estar ganando cuota). Abajo a la izquierda: se están quedando atrás.")
 
@@ -200,7 +202,7 @@ with t_val:
                             hoverinfo="skip")
         fig.update_layout(height=420, xaxis_title="ROE (%)", yaxis_title="EV/EBITDA (veces)", margin=dict(l=10, r=10, t=30, b=10),
                           legend=dict(orientation="h"), separators=",.")
-        st.plotly_chart(fig, width="stretch")
+        graficos.mostrar(fig, fechas=False)
         st.caption("Por debajo de la línea: más baratas de lo que «tocaría» por su rentabilidad. Por encima: el mercado paga "
                    "una prima (porque espera más crecimiento… o porque está cara).")
 

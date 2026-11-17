@@ -4,6 +4,8 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+
+import graficos
 from plotly.subplots import make_subplots
 
 import datos
@@ -208,9 +210,10 @@ if len(cierres) > 5:
                 eventos.append((nombre, f"{f:%d/%m/%Y}", cuando))
             except Exception:
                 pass
-    c1, c2 = st.columns([1.6, 1])
+    c1, c2 = st.columns([1.2, 1])
     with c1:
         st.markdown(chips, unsafe_allow_html=True)
+    with c2:
         if pos is not None:
             st.markdown(
                 f"<div style='font-size:12px;color:#666;margin-top:8px'>Rango de 52 semanas</div>"
@@ -227,19 +230,8 @@ if len(cierres) > 5:
         if e.info.get("website"):
             enlaces.append(f"[Web de la empresa]({e.info['website']})")
         st.caption(" · ".join(enlaces))
-    with c2:
-        periodo_g = st.segmented_control("Periodo", ["1M", "6M", "1A", "5A"], default="1A", key="mini_periodo",
-                                         label_visibility="collapsed") or "1A"
-        n_dias = {"1M": 21, "6M": 126, "1A": 252, "5A": 1260}[periodo_g]
-        tramo = cierres.iloc[-n_dias:]
-        sube = tramo.iloc[-1] >= tramo.iloc[0]
-        col_l = COLOR["Comprar"] if sube else COLOR["Vender"]
-        fig = go.Figure(go.Scatter(x=tramo.index, y=tramo, mode="lines", line=dict(color=col_l, width=2), fill="tozeroy",
-                                   fillcolor="rgba(26,158,92,0.08)" if sube else "rgba(214,69,69,0.08)", hovertemplate="%{x|%d/%m/%Y}<br>%{y:.2f}<extra></extra>"))
-        lo, hi = float(tramo.min()), float(tramo.max())
-        fig.update_layout(height=170, margin=dict(l=0, r=0, t=0, b=0), yaxis=dict(range=[lo - (hi - lo) * 0.08, hi + (hi - lo) * 0.08], side="right"),
-                          xaxis=dict(showgrid=False), showlegend=False)
-        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    import graficos
+    graficos.grafico_precio("mini", ticker, mon, completo=False, h_base=e.hist)
 
 e1, e2 = st.columns(2)
 with e1.expander("🏢 Sobre la empresa"):
@@ -303,7 +295,7 @@ with T_RES:
         text=[("sin datos" if pd.isna(n) else f"{n:.0f}") + f"  · peso {w / tot * 100:.0f}%" for n, w in zip(df_p["Nota"], df_p["Peso"])],
         textposition="outside"))
     fig.update_layout(xaxis=dict(range=[0, 115]), height=300, margin=dict(l=10, r=10, t=10, b=10), yaxis=dict(autorange="reversed"))
-    st.plotly_chart(fig, width="stretch")
+    graficos.mostrar(fig, fechas=False)
 
     st.markdown("#### 🔍 Todas las métricas, por pilar")
     for p in sc.PILARES:
@@ -378,7 +370,7 @@ with T_VAL:
                            text=[f"{f_num(v)} {mon}" for v in est.values()], textposition="outside"))
     fig.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10), yaxis=dict(autorange="reversed"),
                       xaxis=dict(range=[0, max(est.values()) * 1.25] if est else None))
-    st.plotly_chart(fig, width="stretch")
+    graficos.mostrar(fig, fechas=False)
 
 
     st.markdown("#### 🏷️ Frente a su sector")
@@ -409,7 +401,7 @@ with T_VAL:
             fig.add_scatter(x=[s_.index[-1]], y=[s_.iloc[-1]], mode="markers", marker=dict(size=10, color="#222"), name="hoy")
             fig.update_layout(height=320, margin=dict(l=10, r=10, t=10, b=10), showlegend=False,
                               yaxis_tickformat=".1%" if elegido == "Rentabilidad FCF" else None)
-            st.plotly_chart(fig, width="stretch")
+            graficos.mostrar(fig)
         st.caption(f"Calculado cada semana con el precio de ese día y las últimas cuentas anuales publicadas "
                    f"({hm.index[0]:%m/%Y} – {hm.index[-1]:%m/%Y}). Yahoo solo ofrece ~4 ejercicios, por eso el periodo es corto.")
 
@@ -505,7 +497,7 @@ with T_FIN:
         for col, colr in zip(df1.columns, [GRIS, "#7aa6f0", AZUL, COLOR["Comprar"]]):
             fig.add_bar(x=df1.index.astype(str), y=df1[col], name=col, marker_color=colr)
         fig.update_layout(barmode="group", height=360, xaxis=dict(type="category"), margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h"))
-        st.plotly_chart(fig, width="stretch")
+        graficos.mostrar(fig)
 
         if "Ingresos" in df1:
             st.markdown("#### 📐 Márgenes: qué parte de cada venta se queda")
@@ -518,7 +510,7 @@ with T_FIN:
                 fig.add_scatter(x=mg.index.astype(str), y=mg[col], name=col, mode="lines+markers")
             fig.update_layout(height=300, yaxis_tickformat=".0%", margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h"),
                               xaxis=dict(type="category"))
-            st.plotly_chart(fig, width="stretch")
+            graficos.mostrar(fig)
 
     df2 = a_df(["Patrimonio neto", "Deuda total", "Caja"])
     if not df2.empty:
@@ -527,7 +519,7 @@ with T_FIN:
         for col, colr in zip(df2.columns, [AZUL, COLOR["Vender"], COLOR["Comprar"]]):
             fig.add_bar(x=df2.index.astype(str), y=df2[col], name=col, marker_color=colr)
         fig.update_layout(barmode="group", height=320, xaxis=dict(type="category"), margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h"))
-        st.plotly_chart(fig, width="stretch")
+        graficos.mostrar(fig)
 
     c1, c2 = st.columns(2)
     with c1:
@@ -575,35 +567,12 @@ with T_TEC:
         for col, (nombre, val) in zip(c, [("1 mes", m.get("rent_1m")), ("3 meses", m.get("rent_3m")), ("6 meses", m.get("rent_6m")),
                                            ("1 año", m.get("rent_1a")), ("3 años", m.get("rent_3a")), ("Volatilidad anual", m.get("volatilidad"))]):
             metrica(col, nombre, f_pct(val), clave="volatilidad" if nombre.startswith("Volatilidad") else None)
-        st.markdown("#### 🕯️ Gráfico con indicadores")
-        st.caption("Velas = precio de cada día · naranja y morada = medias de 50 y 200 sesiones · punteadas = bandas de Bollinger · "
-                   "debajo: volumen, RSI y MACD. Para dibujar y probar estrategias, usa el 🎯 Simulador.")
-        rango = st.segmented_control("Periodo", ["6M", "1A", "2A", "5A"], default="1A", key="tec_periodo") or "1A"
-        n = {"6M": 126, "1A": 252, "2A": 504, "5A": 1260}[rango]
-        v = t.iloc[-n:]
-        fig = make_subplots(rows=4, cols=1, shared_xaxes=True, row_heights=[0.55, 0.12, 0.16, 0.17], vertical_spacing=0.02)
-        fig.add_candlestick(x=v.index, open=v["Open"], high=v["High"], low=v["Low"], close=v["Close"], name="Precio", row=1, col=1)
-        fig.add_scatter(x=v.index, y=v["SMA50"], name="Media 50", line=dict(color="#f39c12", width=1.4), row=1, col=1)
-        fig.add_scatter(x=v.index, y=v["SMA200"], name="Media 200", line=dict(color="#8e44ad", width=1.6), row=1, col=1)
-        fig.add_scatter(x=v.index, y=v["BB_sup"], name="Bollinger", line=dict(color=GRIS, width=0.8, dash="dot"), row=1, col=1)
-        fig.add_scatter(x=v.index, y=v["BB_inf"], name="Bollinger inf.", showlegend=False, line=dict(color=GRIS, width=0.8, dash="dot"), row=1, col=1)
-        if r.precio_compra:
-            fig.add_hline(y=r.precio_compra, line=dict(color=COLOR["Comprar"], dash="dash"), annotation_text="zona de compra", row=1, col=1)
-        fig.add_bar(x=v.index, y=v["Volume"], name="Volumen", marker_color=GRIS, row=2, col=1)
-        fig.add_scatter(x=v.index, y=v["RSI"], name="RSI", line=dict(color=AZUL), row=3, col=1)
-        fig.add_hline(y=70, line=dict(color=COLOR["Vender"], dash="dot", width=1), row=3, col=1)
-        fig.add_hline(y=30, line=dict(color=COLOR["Comprar"], dash="dot", width=1), row=3, col=1)
-        fig.add_bar(x=v.index, y=v["MACD_hist"], name="MACD hist.",
-                    marker_color=[COLOR["Comprar"] if x >= 0 else COLOR["Vender"] for x in v["MACD_hist"].fillna(0)], row=4, col=1)
-        fig.add_scatter(x=v.index, y=v["MACD"], name="MACD", line=dict(color="#222", width=1), row=4, col=1)
-        fig.add_scatter(x=v.index, y=v["MACD_senal"], name="Señal", line=dict(color="#f39c12", width=1), row=4, col=1)
-        fig.update_layout(height=820, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10),
-                          legend=dict(orientation="h", y=1.02))
-        fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1)
-        fig.update_yaxes(title_text="MACD", row=4, col=1)
-        fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"])])
-        st.plotly_chart(fig, width="stretch")
-
+        st.markdown("#### 🕯️ Gráfico")
+        st.caption("Elige el periodo exacto (o 📅 Fechas para un rango concreto), velas o línea y cada cuánto es una vela. "
+                   "En ⚙️ puedes añadir medias, Bollinger, RSI, MACD o comparar con un índice u otras empresas. "
+                   "Para dibujar líneas y probar estrategias, usa el 🎯 Simulador.")
+        import graficos
+        graficos.grafico_precio("tec", ticker, mon, completo=True, zona_compra=r.precio_compra, h_base=e.hist)
         st.markdown("#### 📏 Indicadores")
         c = st.columns(6)
         metrica(c[0], "RSI (14)", f_num(m.get("rsi"), 0), clave="rsi")
@@ -643,7 +612,7 @@ with T_DIV:
                                text=[f_num(x, 3) for x in da.values], textposition="outside"))
         st.markdown(f"#### 📅 Dividendo por acción y año ({mon})")
         fig.update_layout(height=320, margin=dict(l=10, r=10, t=20, b=10), xaxis=dict(type="category"))
-        st.plotly_chart(fig, width="stretch")
+        graficos.mostrar(fig)
 
 
 # Competidores ----------------------------------------------------------------
@@ -700,7 +669,7 @@ with T_COMP:
                                marker_color=["#222" if t == ticker else COLOR.get(v, GRIS) for t, v in zip(comp["Ticker"], comp["Veredicto"])],
                                text=comp["Veredicto"], textposition="outside"))
         fig.update_layout(height=300, yaxis=dict(range=[0, 105], title="Nota"), margin=dict(l=10, r=10, t=10, b=10))
-        st.plotly_chart(fig, width="stretch")
+        graficos.mostrar(fig, fechas=False)
         st.dataframe(comp, hide_index=True, width="stretch", column_config=config_columnas(),
                      column_order=[c_ for c_ in COLUMNAS_ESCANER if c_ in comp])
 

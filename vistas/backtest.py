@@ -5,6 +5,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+import graficos
+
 import backtest as bt
 from comun import COLOR, GRIS, ajustes, cargar_varias, f_pct, selector_universo, tiempo_estimado
 
@@ -89,7 +91,7 @@ if not pa.empty:
                     textposition="outside")
     fig.update_layout(barmode="group", height=380, yaxis_tickformat=".0%", margin=dict(l=10, r=10, t=10, b=10),
                       legend=dict(orientation="h", y=1.12), xaxis_title="Fecha de la evaluación (rentabilidad de los 12 meses siguientes)")
-    st.plotly_chart(fig, width="stretch")
+    graficos.mostrar(fig, fechas=False)
 
 c1, c2 = st.columns(2)
 with c1:
@@ -101,7 +103,7 @@ with c1:
                                text=[f"{v * 100:+.1f} pp" for v in q["Exceso_medio"]], textposition="outside"))
         fig.update_layout(height=320, yaxis_tickformat=".0%", margin=dict(l=10, r=10, t=10, b=10),
                           yaxis_title="vs media del universo", xaxis_title="Q1 = peores notas · Q5 = mejores")
-        st.plotly_chart(fig, width="stretch")
+        graficos.mostrar(fig, fechas=False)
         st.caption("Si el modelo sirve, las barras deberían subir de izquierda a derecha.")
 with c2:
     st.subheader("¿Qué pilares predicen?")
@@ -113,7 +115,7 @@ with c2:
                                text=[f"{v:+.2f} ({a})" for v, a in zip(ic2["Correlación media"], ic2["Años positivos"])],
                                textposition="outside"))
         fig.update_layout(height=320, margin=dict(l=10, r=10, t=10, b=10), xaxis=dict(range=[-0.6, 0.75]))
-        st.plotly_chart(fig, width="stretch")
+        graficos.mostrar(fig, fechas=False)
         st.caption("Correlación entre la nota de cada pilar y la rentabilidad posterior (entre paréntesis, años en que fue positiva). "
                    "En bolsa, por encima de +0,05 ya es útil. Los pilares en rojo restaron: plantéate bajarles el peso.")
 

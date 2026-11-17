@@ -7,6 +7,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+import graficos
+
 import agenda
 import tesis as ts
 import usuario as us
@@ -296,7 +298,7 @@ def _seccion_eventos(ticker: str, nombre: str, e, mon: str):
     fig.add_hline(y=0, line_color="#999", line_width=1)
     fig.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h", y=1.12),
                       yaxis_title="%", separators=",.")
-    st.plotly_chart(fig, width="stretch")
+    graficos.mostrar(fig)
     st.dataframe(pd.DataFrame({"Fecha": df.index.strftime("%d/%m/%Y"), "BPA esperado": df["esperado"], "BPA real": df["real"],
                                "Sorpresa": df["sorpresa"] / 100, "Reacción del precio": df["reaccion"]}),
                  hide_index=True, width="stretch", column_config={

@@ -5,6 +5,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+import graficos
+
 import ideas
 from comun import (COLOR, COLUMNAS_ESCANER, GRIS, abrir_empresa, ajustes, analizar, cargar_varias, config_columnas, fila_resumen, selector_universo,
                    tiempo_estimado)
@@ -126,7 +128,7 @@ with t_mapa:
         fig.update_layout(height=460, xaxis_title="Nota del modelo", yaxis_title="Potencial hasta el valor justo",
                           yaxis_tickformat=".0%", margin=dict(l=10, r=10, t=30, b=10), legend=dict(orientation="h"))
         st.caption("Arriba a la derecha: buena nota y con recorrido. Abajo a la izquierda: mala nota y cara.")
-        st.plotly_chart(fig, width="stretch")
+        graficos.mostrar(fig, fechas=False)
 
     if d.empty:
         st.caption("Sin datos suficientes para el mapa.")
