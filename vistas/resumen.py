@@ -9,7 +9,6 @@ import tesis as ts
 import usuario as us
 from comun import abrir_empresa, ajustes, analizar, cargar_opcional, eventos_empresa, f_num, f_pct, noticias
 
-st.sidebar.title("☀️ Resumen del día")
 aj = ajustes()
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
@@ -56,7 +55,7 @@ for col, (nombre, tk) in zip(cols, MERCADOS):
 nota_md += ["**Mercados:** " + " · ".join(lineas_mkt), ""]
 
 if not lista:
-    st.info("Aún no sigues ninguna empresa. Marca favoritas con ☆ en **Analizar empresa** o escribe una tesis, "
+    st.info("Aún no sigues ninguna empresa. Pulsa **☆ Seguir** en **Analizar empresa** o escribe una tesis, "
             "y aquí verás cada día lo que ha pasado y lo que viene.")
     st.page_link("vistas/empresa.py", label="Ir a Analizar empresa", icon="🔎")
     st.stop()

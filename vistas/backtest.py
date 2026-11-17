@@ -8,14 +8,13 @@ import streamlit as st
 import backtest as bt
 from comun import COLOR, GRIS, ajustes, cargar_varias, f_pct, selector_universo, tiempo_estimado
 
-st.sidebar.title("🧪 Backtest")
 aj = ajustes()
 
-st.title("Backtest: ¿acierta el veredicto?")
+st.title("🧪 Backtest del modelo: ¿acierta el veredicto?")
 st.write("Rebobina cada empresa a fechas pasadas (30 de abril de cada año), calcula su nota **solo con la información "
          "que existía entonces** y mira qué rentabilidad tuvo en los 12 meses siguientes. Si el modelo sirve, las "
          "empresas con *Comprar* deberían haberlo hecho mejor que la media y las de *Vender*, peor.")
-st.caption("Usa los pesos y umbrales de la barra lateral: cambia los pesos y vuelve a ejecutar para ver si mejora. "
+st.caption("Usa los pesos y umbrales de ⚙️ Ajustes del modelo (barra lateral): cambia los pesos y vuelve a ejecutar para ver si mejora. "
            "El pilar de analistas no entra (no hay histórico gratuito de sus opiniones).")
 
 universo, tickers = selector_universo("bt", "ITX.MC, SAN.MC, IBE.MC, TEF.MC, REP.MC, BBVA.MC, AENA.MC, FER.MC")

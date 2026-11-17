@@ -208,16 +208,19 @@ def _persistente(widget, etiqueta, clave, defecto, **kw):
 
 
 def ajustes() -> dict:
+    """Ajustes del modelo en la barra lateral, todos dentro de un desplegable (son avanzados)."""
     sl, cb = st.slider, st.checkbox
-    with st.sidebar.expander("⚖️ Pesos de cada pilar", expanded=False):
+    with st.sidebar.expander("⚙️ Ajustes del modelo (avanzado)", expanded=False):
+        st.caption("Cambian la nota y el veredicto de todas las secciones. Si no sabes qué tocar, déjalos como están.")
+        st.markdown("**⚖️ Peso de cada pilar en la nota**")
         pesos = {p: _persistente(sl, p, f"peso_{p}", sc.PESOS_DEFECTO[p], min_value=0, max_value=50, step=5)
                  for p in sc.PILARES}
         if st.button("Restablecer pesos", key="reset_pesos"):
             for p in sc.PILARES:
                 st.session_state["_guardado_peso_" + p] = sc.PESOS_DEFECTO[p]
             st.rerun()
-
-    with st.sidebar.expander("🎯 Umbrales del veredicto", expanded=False):
+        st.divider()
+        st.markdown("**🎯 Cuándo dar cada veredicto**")
         u_comprar = _persistente(sl, "Comprar si la nota ≥", "u_comprar", sc.UMBRAL_COMPRAR, min_value=50, max_value=90)
         u_vender = _persistente(sl, "Vender si la nota <", "u_vender", sc.UMBRAL_VENDER, min_value=20, max_value=60)
         if u_vender >= u_comprar:
@@ -226,8 +229,8 @@ def ajustes() -> dict:
         margen_seg = _persistente(sl, "Margen de seguridad para el precio de compra", "margen_seg", 15,
                                   min_value=0, max_value=40, step=5, format="%d%%") / 100
         respetar_tendencia = _persistente(cb, "No dar 'Comprar' con tendencia bajista fuerte", "tendencia", True)
-
-    with st.sidebar.expander("💰 Parámetros del DCF", expanded=False):
+        st.divider()
+        st.markdown("**💰 Supuestos del DCF (valor justo)**")
         auto_g = _persistente(cb, "Crecimiento automático (histórico, máx. 15%)", "auto_g", True)
         g_manual = _persistente(sl, "Crecimiento FCF años 1-5", "g_manual", 8, min_value=-5, max_value=30, step=1,
                                 format="%d%%", disabled=auto_g) / 100
@@ -309,9 +312,9 @@ def secreto(nombre: str):
 
 
 
-def selector_empresa(titulo: str = "📊 Analizador"):
+def selector_empresa(titulo: str = "🔎 Buscar empresa"):
     """Buscador de empresa en la barra lateral. La empresa elegida se mantiene al cambiar de sección."""
-    st.sidebar.title(titulo)
+    st.sidebar.markdown(f"### {titulo}")
     modo = _persistente(st.sidebar.radio, "Buscar por", "modo_busqueda", "Nombre", options=["Nombre", "Ticker"],
                         horizontal=True)
     if modo == "Nombre":
@@ -369,3 +372,18 @@ def eventos_empresa(ticker: str) -> dict:
         return datos.eventos(ticker)
     except Exception:
         return {"proximos": [], "consenso": {}, "resultados": pd.DataFrame()}
+
+
+
+def cabecera(titulo: str, subtitulo: str):
+    """Título de sección con una línea que explica para qué sirve (igual en todas las páginas)."""
+    st.title(titulo)
+    st.caption(subtitulo)
+
+
+def conclusion(texto: str):
+    """Recuadro «En pocas palabras» al principio de cada bloque."""
+    import re
+    html = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", texto)
+    html = re.sub(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])", r"<i>\1</i>", html)
+    st.markdown(f'<div class="conclusion">💬 {html}</div>', unsafe_allow_html=True)

@@ -1,4 +1,4 @@
-"""Pestaña «Tesis y eventos» de Analizar empresa."""
+"""Pestañas «Resultados» y «Mi tesis» de Analizar empresa."""
 from __future__ import annotations
 
 import time
@@ -172,7 +172,7 @@ def _seccion_tesis(ticker: str, nombre: str, m: dict, r, precio, mon: str):
         gan, per = abs(t["objetivo"] - precio), abs(precio - t["stop"])
         metrica(c4, "Recompensa / riesgo", f"{gan / per:.1f} : 1".replace(".", ",") if per else "—", clave="recompensa_riesgo")
 
-    st.markdown("**Marcador de pilares**")
+    st.markdown("#### 🧱 Marcador de pilares")
     filas = []
     for p in t.get("pilares", []):
         est, ahora = ts.evaluar_pilar(p, m, r)
@@ -186,7 +186,7 @@ def _seccion_tesis(ticker: str, nombre: str, m: dict, r, precio, mon: str):
     else:
         st.caption("Sin pilares. Edita la tesis para añadir 3-5.")
     if t.get("riesgos"):
-        st.markdown("**Riesgos que la romperían**\n" + "\n".join(f"- {x}" for x in t["riesgos"]))
+        st.markdown("#### ⚠️ Riesgos que la romperían\n" + "\n".join(f"- {x}" for x in t["riesgos"]))
 
     b1, b2, b3, b4 = st.columns(4)
     if b1.button("✏️ Editar tesis", key=f"ed_tesis_{ticker}", width="stretch"):
@@ -205,35 +205,43 @@ def _seccion_tesis(ticker: str, nombre: str, m: dict, r, precio, mon: str):
             ts.borrar(ticker)
             st.rerun()
 
-    st.markdown("**📒 Registro de novedades**")
-    st.caption("Apunta cada dato nuevo (resultados, cambio de directivos, movimiento de un competidor…) y si refuerza o "
+    st.markdown("#### 📒 Registro de novedades")
+    st.caption("Cada dato nuevo (resultados, cambio de directivos, movimiento de un competidor…) y si refuerza o "
                "debilita la tesis. Apunta también lo que va en contra: es lo que más enseña.")
-    with st.form(f"form_novedad_{ticker}", clear_on_submit=True):
-        c1, c2 = st.columns([3, 1])
-        dato = c1.text_input("¿Qué ha pasado?", placeholder="Ej.: Resultados del 3T: ventas +12%, margen estable")
-        fecha = c2.date_input("Fecha", format="DD/MM/YYYY")
-        c1, c2, c3, c4 = st.columns(4)
-        impacto = c1.selectbox("Efecto en la tesis", ts.IMPACTO)
-        pilares_txt = ["(general)"] + [p.get("texto") or _ETIQ.get(p.get("metrica"), "") for p in t.get("pilares", [])]
-        pilar = c2.selectbox("Pilar afectado", pilares_txt)
-        accion = c3.selectbox("Qué haces", ts.ACCIONES)
-        conv = c4.selectbox("Convicción ahora", ts.CONVICCION, index=ts.CONVICCION.index(t.get("conviccion", "Media")))
-        if st.form_submit_button("➕ Añadir al registro") and dato.strip():
-            t.setdefault("registro", []).insert(0, {"fecha": fecha.strftime("%Y-%m-%d"), "dato": dato.strip(), "impacto": impacto,
-                                                    "pilar": "" if pilar == "(general)" else pilar, "accion": accion, "conviccion": conv})
-            t["conviccion"] = conv
-            ts.guardar(ticker, t)
-            st.rerun()
     if t.get("registro"):
         icon = {"Refuerza": "⬆️ Refuerza", "Neutral": "➖ Neutral", "Debilita": "⬇️ Debilita"}
         st.dataframe(pd.DataFrame([{"Fecha": x["fecha"], "Novedad": x["dato"], "Efecto": icon.get(x["impacto"], x["impacto"]),
                                     "Pilar": x.get("pilar", ""), "Acción": x["accion"], "Convicción": x["conviccion"]}
                                    for x in t["registro"]]), hide_index=True, width="stretch")
+    else:
+        st.caption("Aún no has apuntado nada.")
+    with st.expander("➕ Apuntar una novedad", expanded=not t.get("registro")):
+        with st.form(f"form_novedad_{ticker}", clear_on_submit=True):
+            c1, c2 = st.columns([3, 1])
+            dato = c1.text_input("¿Qué ha pasado?", placeholder="Ej.: Resultados del 3T: ventas +12%, margen estable")
+            fecha = c2.date_input("Fecha", format="DD/MM/YYYY")
+            c1, c2, c3, c4 = st.columns(4)
+            impacto = c1.selectbox("Efecto en la tesis", ts.IMPACTO)
+            pilares_txt = ["(general)"] + [p.get("texto") or _ETIQ.get(p.get("metrica"), "") for p in t.get("pilares", [])]
+            pilar = c2.selectbox("Pilar afectado", pilares_txt)
+            accion = c3.selectbox("Qué haces", ts.ACCIONES)
+            conv = c4.selectbox("Convicción ahora", ts.CONVICCION, index=ts.CONVICCION.index(t.get("conviccion", "Media")))
+            if st.form_submit_button("➕ Añadir al registro") and dato.strip():
+                t.setdefault("registro", []).insert(0, {"fecha": fecha.strftime("%Y-%m-%d"), "dato": dato.strip(), "impacto": impacto,
+                                                        "pilar": "" if pilar == "(general)" else pilar, "accion": accion, "conviccion": conv})
+                t["conviccion"] = conv
+                ts.guardar(ticker, t)
+                st.rerun()
 
 
 def _seccion_eventos(ticker: str, nombre: str, e, mon: str):
-    st.markdown("#### 📅 Próximos eventos")
     ev = eventos_empresa(ticker)
+    import previa
+    pv = previa.construir(ev, e.hist, e.hist["Close"].dropna().iloc[-1] if e.hist is not None and len(e.hist) else None)
+    if pv is not None and pv["dias"] <= 60:
+        with st.container(border=True):
+            previa.mostrar(pv, e.sector, ts.de(ticker) if us.cargado() else None, mon, ticker)
+    st.markdown("#### 📅 Próximos eventos")
     hoy = pd.Timestamp.today().normalize()
     filas = [dict(x, ticker=ticker, empresa=nombre) for x in ev["proximos"]]
     filas += [{"fecha": pd.Timestamp(x["fecha"]), "ticker": ticker, "empresa": nombre, "tipo": "Propio",
@@ -249,12 +257,7 @@ def _seccion_eventos(ticker: str, nombre: str, e, mon: str):
     else:
         st.caption("Yahoo no tiene eventos anunciados para los próximos 4 meses.")
     cs = ev.get("consenso") or {}
-    import previa
-    pv = previa.construir(ev, e.hist, e.hist["Close"].dropna().iloc[-1] if e.hist is not None and len(e.hist) else None)
-    if pv is not None and pv["dias"] <= 60:
-        with st.container(border=True):
-            previa.mostrar(pv, e.sector, ts.de(ticker) if us.cargado() else None, mon, ticker)
-    elif cs.get("Earnings Average") is not None:
+    if (pv is None or pv["dias"] > 60) and cs.get("Earnings Average") is not None:
         txt = f"Para la próxima presentación, los analistas esperan un **beneficio por acción de {f_num(cs['Earnings Average'])}**"
         if cs.get("Earnings Low") is not None and cs.get("Earnings High") is not None:
             txt += f" (entre {f_num(cs['Earnings Low'])} y {f_num(cs['Earnings High'])})"
@@ -277,7 +280,7 @@ def _seccion_eventos(ticker: str, nombre: str, e, mon: str):
             c1.write(f"{x['fecha']} · {x['texto']} · {agenda.IMPACTO_ICONO.get(x['impacto'], '')}")
             c2.button("🗑️", key=f"del_ev_{x['id']}", on_click=us.borrar_evento, args=(x["id"],))
 
-    st.markdown("#### 📊 Historial de resultados")
+    st.markdown("#### 📊 Cómo le fue en presentaciones anteriores")
     df = agenda.historial_resultados(ev.get("resultados"), e.hist)
     if df.empty:
         st.caption("Yahoo no tiene el historial de previsiones de beneficio de esta empresa (es habitual fuera de EE. UU.).")

@@ -9,16 +9,34 @@ import usuario
 st.set_page_config(page_title="Analizador de empresas", page_icon="📊", layout="wide")
 usuario.montar()  # favoritos, alertas y notas guardados en este navegador
 
-paginas = [
-    st.Page("vistas/resumen.py", title="Resumen del día", icon="☀️"),
-    st.Page("vistas/empresa.py", title="Analizar empresa", icon="🔎", default=True),
-    st.Page("vistas/favoritos.py", title="Mi lista y alertas", icon="⭐"),
-    st.Page("vistas/calendario.py", title="Calendario", icon="📅"),
-    st.Page("vistas/sectores.py", title="Sectores", icon="🏭"),
-    st.Page("vistas/simulador.py", title="Simulador", icon="🎯"),
-    st.Page("vistas/escaner.py", title="Escáner", icon="📡"),
-    st.Page("vistas/backtest.py", title="Backtest del modelo", icon="🧪"),
-]
+# Estilo común: cifras algo más pequeñas (no se cortan) y definiciones emergentes discretas
+st.markdown("""
+<style>
+[data-testid="stMetricValue"] { font-size: 1.7rem; }
+button[kind="tertiary"][data-testid="stPopoverButton"] > div > div[aria-hidden="true"] { display: none; }
+button[kind="tertiary"][data-testid="stPopoverButton"] { min-height: 0; padding: 0; }
+button[kind="tertiary"][data-testid="stPopoverButton"] p { font-size: 0.875rem; opacity: .8; }
+h4 { padding-top: .6rem; }
+.conclusion { border-left: 5px solid #4c78a8; background: rgba(76,120,168,.08); padding: .7rem 1rem;
+              border-radius: 6px; margin: .2rem 0 1rem 0; font-size: 1.02rem; }
+</style>""", unsafe_allow_html=True)
+
+paginas = {
+    "Inicio": [st.Page("vistas/resumen.py", title="Resumen del día", icon="☀️")],
+    "Investigar": [
+        st.Page("vistas/empresa.py", title="Analizar empresa", icon="🔎", default=True),
+        st.Page("vistas/escaner.py", title="Escáner e ideas", icon="📡"),
+        st.Page("vistas/sectores.py", title="Sectores", icon="🏭"),
+    ],
+    "Mi seguimiento": [
+        st.Page("vistas/favoritos.py", title="Mi lista y alertas", icon="⭐"),
+        st.Page("vistas/calendario.py", title="Calendario", icon="📅"),
+    ],
+    "Herramientas": [
+        st.Page("vistas/simulador.py", title="Simulador", icon="🎯"),
+        st.Page("vistas/backtest.py", title="Backtest del modelo", icon="🧪"),
+    ],
+}
 pagina = st.navigation(paginas)
 
 # Aviso de alertas cumplidas (solo las de precio: son rápidas de comprobar)

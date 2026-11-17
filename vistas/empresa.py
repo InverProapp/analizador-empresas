@@ -22,8 +22,8 @@ margen_seg, wacc, g_term = aj["margen_seg"], aj["wacc"], aj["g_term"]
 # Principal
 # ---------------------------------------------------------------------------
 if not ticker:
-    st.title("Analizador de empresas")
-    st.write("Busca una empresa en la barra lateral para empezar.")
+    st.title("🔎 Analizar empresa")
+    st.write("Escribe el nombre o el ticker de una empresa en la barra lateral (a la izquierda) para empezar.")
     st.stop()
 
 with st.spinner(f"Descargando {ticker}…"):
@@ -44,27 +44,54 @@ if e.hist is not None and len(e.hist) > 1:
     var_dia = e.hist["Close"].iloc[-1] / e.hist["Close"].iloc[-2] - 1
 
 # Cabecera ------------------------------------------------------------------
+import glosario
+import tesis as _ts
 import usuario as us
-from comun import abrir_empresa
+from comun import abrir_empresa, cabecera, conclusion
+
+
+def frase_resumen() -> str:
+    """El veredicto explicado en una o dos frases normales."""
+    que = {"Comprar": "El modelo la ve **para comprar**", "Esperar": "El modelo dice **esperar**",
+           "Vender": "El modelo la ve **para vender o evitar**"}.get(r.veredicto, "Faltan datos para dar un veredicto")
+    fuertes = [p.lower() for p in sc.PILARES if r.pilares[p].nota is not None and r.pilares[p].nota >= 65 and p != "Analistas"]
+    flojos = [p.lower() for p in sc.PILARES if r.pilares[p].nota is not None and r.pilares[p].nota < 45 and p != "Analistas"]
+
+    def lista(xs):
+        return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " y " + xs[-1]
+    partes = []
+    if fuertes:
+        partes.append(f"es fuerte en {lista(fuertes)}")
+    if flojos:
+        partes.append(("pero " if fuertes else "") + f"flojea en {lista(flojos)}")
+    texto = que + (": " + " ".join(partes) if partes else "") + "."
+    if r.valor_justo and precio:
+        dif = precio / r.valor_justo - 1
+        if dif > 0.05:
+            texto += f" Hoy cotiza un **{dif * 100:.0f}% por encima** de su valor justo estimado."
+        elif dif < -0.05:
+            texto += f" Hoy cotiza con un **{-dif * 100:.0f}% de descuento** sobre su valor justo estimado."
+        else:
+            texto += " Hoy cotiza **cerca** de su valor justo estimado."
+        if r.precio_compra and precio <= r.precio_compra:
+            texto += " Está **dentro de la zona de compra**."
+    if r.veredicto != r.veredicto_bruto:
+        texto += f" (Por nota saldría {r.veredicto_bruto}, pero las alertas de riesgo lo limitan.)"
+    return texto
+
 
 c_tit, c_acc = st.columns([2.6, 2.4], vertical_alignment="center")
 with c_tit:
     st.title(e.nombre)
     sector_es = sc.SECTORES_ES.get(e.sector, e.sector)
-    st.caption(f"**{e.ticker}** · {sector_es} · {e.info.get('industry', '')} · {e.info.get('country', '')} · "
-               f"{e.info.get('exchange', '')} · moneda {mon}")
-    import tesis as _ts
-    _t = _ts.de(ticker) if us.cargado() else None
-    if _t:
-        _mk = _ts.marcador(_t, m, r)
-        st.caption(f"📌 Mi tesis **{_t['posicion'].lower()}** · {_mk['salud']} · {_mk['ok']}/{_mk['n']} pilares"
-                   + (" · 🧐 toca revisarla" if _mk["revisar"] else "") + " — en la pestaña *Tesis y eventos*")
+    detalles = [f"**{e.ticker}**", sector_es, e.info.get("industry"), e.info.get("country"), e.info.get("exchange"), f"moneda {mon}"]
+    st.caption(" · ".join(x for x in detalles if x))
 with c_acc:
     a1, a2, a3 = st.columns(3)
     fav = us.es_favorito(ticker)
-    a1.button("⭐ Favorito" if fav else "☆ Favorito", key="btn_fav", type="primary" if fav else "secondary",
+    a1.button("⭐ En mi lista" if fav else "☆ Seguir", key="btn_fav", type="primary" if fav else "secondary",
               on_click=us.alternar_favorito, args=(ticker, e.nombre, precio), disabled=not us.cargado(), width="stretch",
-              help="Quitar de tu lista" if fav else "Guardar en tu lista (en este navegador)")
+              help="Quitar de tu lista" if fav else "Añadir a tu lista de favoritas (se guarda en este navegador)")
     mis_alertas = us.alertas_de(ticker)
     estados = us.comprobar(mis_alertas, lambda tk: (m, r)) if mis_alertas else {}
     n_cumplen = sum(1 for v in estados.values() if v[0])
@@ -92,19 +119,65 @@ with c_acc:
             valor = st.number_input("Valor", min_value=0.0, value=float(us.DEFECTOS.get(tipo, 5)), step=0.5, key=f"alerta_valor_{tipo}")
         st.button("➕ Crear alerta", type="primary", on_click=us.crear_alerta, args=(ticker, e.nombre, tipo, valor),
                   disabled=not us.cargado(), width="stretch")
-        st.caption("Las alertas se comprueban cada vez que abres la web (precios con ~15 min de retraso). "
-                   "Se guardan en este navegador. Todas, en ⭐ Mi lista y alertas.")
-    if a3.button("🎯 Simular", width="stretch", help="Abrir esta empresa en el simulador"):
+        st.caption("Se comprueban cada vez que abres la web (precios con ~15 min de retraso) y se guardan en este navegador. "
+                   "Todas, en ⭐ Mi lista y alertas.")
+    if a3.button("🎯 Simular", width="stretch", help="Probar compras y ventas con el histórico de esta empresa"):
         abrir_empresa(ticker, "vistas/simulador.py")
-    if n_cumplen:
-        st.success(f"🔔 {n_cumplen} de tus alertas de esta empresa se cumple{'n' if n_cumplen > 1 else ''} ahora.", icon="🔔")
 
-k1, k2, k3, k4, k5 = st.columns(5)
-metrica(k1, "Precio", f"{f_num(precio)} {mon}", f_pct(var_dia, 2) if var_dia is not None else None, "precio")
-metrica(k2, "Capitalización", f_dinero(m.get("market_cap"), mon), clave="capitalizacion")
-metrica(k3, "PER", f_x(m.get("per")), clave="per")
-metrica(k4, "Rent. dividendo", f_pct(m.get("rent_dividendo"), 2), clave="rent_dividendo")
-metrica(k5, "Beta", f_num(m.get("beta")), clave="beta")
+# 1. La respuesta ----------------------------------------------------------------
+col_v, col_t, col_p = st.columns([1.05, 1.75, 1.2], gap="medium")
+with col_v:
+    color = COLOR[r.veredicto]
+    st.markdown(
+        f"""<div style="border-radius:14px;padding:18px 14px;background:{color};color:white;text-align:center">
+        <div style="font-size:13px;opacity:.85;letter-spacing:.08em">VEREDICTO</div>
+        <div style="font-size:42px;font-weight:800;line-height:1.1">{r.veredicto.upper()}</div>
+        <div style="font-size:22px;font-weight:700;margin-top:2px">{(r.nota or 0):.0f}<span style="font-size:14px;opacity:.85">/100</span></div>
+        <div style="font-size:12px;opacity:.9">Confianza {r.confianza.lower()} · datos del {r.cobertura * 100:.0f}% de las métricas</div>
+        </div>""", unsafe_allow_html=True)
+    with st.popover("¿Qué significa?", type="tertiary", icon=":material/info:"):
+        st.markdown(glosario.texto("veredicto"))
+        st.markdown(glosario.texto("nota"))
+with col_t:
+    st.markdown("**En pocas palabras**")
+    st.markdown(frase_resumen())
+    k1, k2, k3 = st.columns(3)
+    metrica(k1, "Precio", f"{f_num(precio)} {mon}", f_pct(var_dia, 2) if var_dia is not None else None, "precio")
+    metrica(k2, "Valor justo", f"{f_num(r.valor_justo)} {mon}" if r.valor_justo else "—", clave="valor_justo",
+            delta=f"{f_pct(r.valor_justo / precio - 1)} vs precio" if r.valor_justo and precio else None)
+    metrica(k3, "Zona de compra", f"{f_num(r.precio_compra)} {mon}" if r.precio_compra else "—", clave="zona_compra")
+with col_p:
+    st.markdown("**Nota por pilar**")
+    barras = ""
+    for p in sc.PILARES:
+        n = r.pilares[p].nota
+        ancho = 0 if n is None else max(n, 2)
+        barras += (f"<div style='display:flex;align-items:center;gap:8px;font-size:13px;margin:3px 0'>"
+                   f"<div style='width:112px;color:#555'>{p}</div>"
+                   f"<div style='flex:1;background:#eee;border-radius:4px;height:10px'>"
+                   f"<div style='width:{ancho}%;background:{color_nota(n) if n is not None else '#ccc'};height:10px;border-radius:4px'></div></div>"
+                   f"<div style='width:44px;text-align:right'>{'—' if n is None else f'{n:.0f}'}</div></div>")
+    st.markdown(barras, unsafe_allow_html=True)
+    st.caption("Detalle de cada pilar en la pestaña *Resumen*.")
+
+avisos = list(r.alertas)
+for a in avisos:
+    st.warning(a, icon="⚠️")
+if n_cumplen:
+    st.success(f"🔔 {n_cumplen} de tus alertas de esta empresa se cumple{'n' if n_cumplen > 1 else ''} ahora.")
+_t = _ts.de(ticker) if us.cargado() else None
+if _t:
+    _mk = _ts.marcador(_t, m, r)
+    st.info(f"📌 **Tu tesis {_t['posicion'].lower()}**: {_mk['salud']} · se cumplen {_mk['ok']} de {_mk['n']} pilares"
+            + (" · 🧐 toca revisarla" if _mk["revisar"] else "") + " — detalle en la pestaña **📌 Mi tesis**.")
+
+# 2. Cómo cotiza -------------------------------------------------------------------
+st.markdown("#### 📈 Cómo cotiza")
+k1, k2, k3, k4 = st.columns(4)
+metrica(k1, "Capitalización", f_dinero(m.get("market_cap"), mon), clave="capitalizacion")
+metrica(k2, "PER", f_x(m.get("per")), clave="per")
+metrica(k3, "Rent. dividendo", f_pct(m.get("rent_dividendo"), 2), clave="rent_dividendo")
+metrica(k4, "Beta", f_num(m.get("beta")), clave="beta")
 
 # Franja de mercado: rentabilidades, rango de 52 semanas, eventos y gráfico rápido
 cierres = e.hist["Close"].dropna() if e.hist is not None and not e.hist.empty else pd.Series(dtype=float)
@@ -175,88 +248,48 @@ with e1.expander("🏢 Sobre la empresa"):
     datos_emp = [(k, e.info.get(c)) for k, c in (("Empleados", "fullTimeEmployees"), ("Sede", "city"), ("País", "country"))]
     st.caption(" · ".join(f"{k}: {f'{v:,}'.replace(',', '.') if isinstance(v, int) else v}" for k, v in datos_emp if v))
 with e2.expander("📝 Mis notas sobre esta empresa" + (" ✏️" if us.nota(ticker) else "")):
-    texto_nota = st.text_area("Tu tesis de inversión, ideas, a qué precio entrarías…", value=us.nota(ticker), key=f"nota_{ticker}",
-                              height=120, label_visibility="collapsed", placeholder="Tu tesis de inversión, ideas, a qué precio entrarías…")
+    texto_nota = st.text_area("Ideas, dudas, a qué precio entrarías…", value=us.nota(ticker), key=f"nota_{ticker}",
+                              height=120, label_visibility="collapsed", placeholder="Ideas, dudas, a qué precio entrarías… (para una tesis con pilares que se comprueban solos, usa la pestaña 📌 Mi tesis)")
     st.button("💾 Guardar nota", on_click=lambda: us.guardar_nota(ticker, st.session_state[f"nota_{ticker}"]), disabled=not us.cargado())
     st.caption("Se guarda en este navegador.")
 
-# Veredicto -------------------------------------------------------------------
-col_v, col_g, col_r = st.columns([1.2, 1, 1.6])
-with col_v:
-    color = COLOR[r.veredicto]
-    st.markdown(
-        f"""<div style="border-radius:14px;padding:22px;background:{color};color:white;text-align:center">
-        <div style="font-size:14px;opacity:.85;letter-spacing:.08em">VEREDICTO</div>
-        <div style="font-size:46px;font-weight:800;line-height:1.1">{r.veredicto.upper()}</div>
-        <div style="font-size:14px;opacity:.9">Confianza {r.confianza.lower()} · datos para el {r.cobertura * 100:.0f}% de las métricas</div>
-        </div>""", unsafe_allow_html=True)
-    import glosario
-    with st.popover("¿Qué significa el veredicto?", type="tertiary", icon=":material/info:"):
-        st.markdown(glosario.texto("veredicto"))
-        st.markdown(glosario.texto("nota"))
-    if r.veredicto != r.veredicto_bruto:
-        st.caption(f"Por nota saldría **{r.veredicto_bruto}**, pero las alertas lo limitan a **{r.veredicto}**.")
-    v1, v2 = st.columns(2)
-    metrica(v1, "Valor justo estimado", f"{f_num(r.valor_justo)} {mon}" if r.valor_justo else "—", clave="valor_justo", delta=
-              f_pct(r.valor_justo / precio - 1) if r.valor_justo and precio else None)
-    metrica(v2, f"Zona de compra (−{margen_seg * 100:.0f}%)", f"{f_num(r.precio_compra)} {mon}" if r.precio_compra else "—", clave="zona_compra")
-
-with col_g:
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number", value=r.nota or 0, number={"suffix": "/100", "font": {"size": 28}, "valueformat": ".0f"},
-        gauge={"axis": {"range": [0, 100]}, "bar": {"color": "#222", "thickness": 0.25},
-               "steps": [{"range": [0, u_vender], "color": "#f4c7c7"},
-                         {"range": [u_vender, u_comprar], "color": "#f7e3a8"},
-                         {"range": [u_comprar, 100], "color": "#bfe6cf"}]},
-        title={"text": "Nota global", "font": {"size": 16}}))
-    fig.update_layout(height=280, margin=dict(l=30, r=30, t=60, b=0))
-    st.plotly_chart(fig, width="stretch")
-
-with col_r:
-    nombres = [p for p in sc.PILARES if r.pilares[p].nota is not None]
-    valores = [r.pilares[p].nota for p in nombres]
-    fig = go.Figure(go.Scatterpolar(r=valores + valores[:1], theta=nombres + nombres[:1], fill="toself",
-                                    line_color=AZUL, fillcolor="rgba(42,111,219,.25)"))
-    fig.update_layout(polar=dict(radialaxis=dict(range=[0, 100], tickfont_size=9)), height=280,
-                      margin=dict(l=40, r=40, t=30, b=20), showlegend=False)
-    st.plotly_chart(fig, width="stretch")
-
-for a in r.alertas:
-    st.warning(a, icon="⚠️")
 if e.errores:
     with st.expander("Avisos de descarga"):
         for err in e.errores:
             st.caption(err)
 
 # ---------------------------------------------------------------------------
-# Pestañas
+# Pestañas: primero el análisis, luego lo tuyo y al final cómo se calcula
 # ---------------------------------------------------------------------------
 # Análisis con IA desactivado de momento: pon MOSTRAR_IA = True para recuperarlo (requiere API key de Anthropic)
 MOSTRAR_IA = False
-nombres_tabs = ["🧭 Resumen", "📌 Tesis y eventos", "💶 Valoración", "🕰️ Histórico", "🆚 Competidores"] + (
-    ["🤖 Análisis IA"] if MOSTRAR_IA else []) + ["📈 Finanzas", "📉 Técnico", "💸 Dividendos", "📘 Metodología"]
+nombres_tabs = (["🧭 Resumen", "💶 Valoración", "📊 Finanzas", "📉 Gráfico", "💸 Dividendos", "🆚 Competencia"]
+                + (["🤖 IA"] if MOSTRAR_IA else []) + ["📅 Resultados", "📌 Mi tesis", "ℹ️ Cómo se calcula"])
 tabs = dict(zip(nombres_tabs, st.tabs(nombres_tabs)))
-T_RES, T_TESIS, T_VAL, T_HIS, T_COMP = (tabs[n] for n in nombres_tabs[:5])
-T_FIN, T_TEC, T_DIV, T_MET = (tabs[n] for n in nombres_tabs[-4:])
-T_IA = tabs.get("🤖 Análisis IA")
+T_RES, T_VAL, T_FIN, T_TEC, T_DIV, T_COMP = (tabs[n] for n in nombres_tabs[:6])
+T_EVE, T_TESIS, T_MET = (tabs[n] for n in nombres_tabs[-3:])
+T_IA = tabs.get("🤖 IA")
 
 # Resumen ---------------------------------------------------------------------
 with T_RES:
+    conclusion(frase_resumen())
     cpos, cneg = st.columns(2)
     with cpos:
-        st.subheader("✅ A favor")
+        st.markdown("#### ✅ Puntos fuertes")
         if not r.positivos:
             st.caption("Ningún punto especialmente fuerte.")
         for pilar, i in r.positivos:
             st.markdown(f"- **{i.nombre}**: {f_item(i)} <span style='color:{GRIS}'>({pilar})</span>", unsafe_allow_html=True)
     with cneg:
-        st.subheader("❌ En contra")
+        st.markdown("#### ❌ Puntos débiles")
         if not r.negativos:
             st.caption("Ningún punto especialmente débil.")
         for pilar, i in r.negativos:
             st.markdown(f"- **{i.nombre}**: {f_item(i)} <span style='color:{GRIS}'>({pilar})</span>", unsafe_allow_html=True)
 
-    st.subheader("Nota por pilar")
+    st.markdown("#### 🧱 Nota de cada pilar y su peso")
+    st.caption("Cada pilar se puntúa de 0 a 100. La nota global es la media ponderada con estos pesos "
+               "(se cambian en ⚙️ Ajustes del modelo, en la barra lateral).")
     filas = []
     for p in sc.PILARES:
         pl = r.pilares[p]
@@ -269,10 +302,10 @@ with T_RES:
         marker_color=[color_nota(n) for n in df_p["Nota"]],
         text=[("sin datos" if pd.isna(n) else f"{n:.0f}") + f"  · peso {w / tot * 100:.0f}%" for n, w in zip(df_p["Nota"], df_p["Peso"])],
         textposition="outside"))
-    fig.update_layout(xaxis=dict(range=[0, 115]), height=320, margin=dict(l=10, r=10, t=10, b=10), yaxis=dict(autorange="reversed"))
+    fig.update_layout(xaxis=dict(range=[0, 115]), height=300, margin=dict(l=10, r=10, t=10, b=10), yaxis=dict(autorange="reversed"))
     st.plotly_chart(fig, width="stretch")
 
-    st.subheader("Detalle de todas las métricas")
+    st.markdown("#### 🔍 Todas las métricas, por pilar")
     for p in sc.PILARES:
         pl = r.pilares[p]
         etiqueta = f"{p} — {'sin datos' if pl.nota is None else f'{pl.nota:.0f}/100'}"
@@ -288,18 +321,54 @@ with T_RES:
                 column_config={"Nota": st.column_config.ProgressColumn("Nota", min_value=0, max_value=100, format="%d")})
 
 # Valoración ------------------------------------------------------------------
-with T_VAL:
-    c1, c2, c3, c4 = st.columns(4)
-    metrica(c1, "PER", f_x(m.get("per")), clave="per")
-    metrica(c2, "PER futuro", f_x(m.get("per_fwd")), clave="per_fwd")
-    metrica(c3, "EV/EBITDA", f_x(m.get("ev_ebitda")), clave="ev_ebitda")
-    metrica(c4, "Precio / valor contable", f_x(m.get("p_vc")), clave="p_vc")
-    metrica(c1, "PEG", f_x(m.get("peg"), 2), clave="peg")
-    metrica(c2, "Precio / ventas", f_x(m.get("p_ventas")), clave="p_ventas")
-    metrica(c3, "Rentabilidad FCF", f_pct(m.get("fcf_yield")), clave="fcf_yield")
-    metrica(c4, "Valor empresa (EV)", f_dinero(m.get("ev"), mon), clave="ev")
+from comun import historico
 
-    st.subheader("Precio actual frente a estimaciones de valor")
+ref = sc.SECTORES.get(e.sector, sc.SECTOR_DEFECTO)
+hm = historico(ticker)
+SENTIDO_HIST = {"PER": True, "Precio/Valor contable": True, "Precio/Ventas": True, "EV/EBITDA": True, "Rentabilidad FCF": False}
+
+
+def tabla_historia():
+    filas = []
+    if hm.empty:
+        return pd.DataFrame()
+    for col, bajo_barato in SENTIDO_HIST.items():
+        s_ = hm[col].dropna()
+        if len(s_) < 10:
+            continue
+        actual = s_.iloc[-1]
+        barato_que = (s_ > actual).mean() if bajo_barato else (s_ < actual).mean()
+        filas.append({"Múltiplo": col, "Hoy": actual, "Mediana": s_.median(), "Mínimo": s_.min(), "Máximo": s_.max(),
+                      "Más barata que el % del periodo": barato_que})
+    return pd.DataFrame(filas)
+
+
+def juicio_sector(v, rf):
+    if v is None or rf is None or v <= 0:
+        return None
+    return "barato" if v <= rf[0] else "caro" if v >= rf[1] else "en la media"
+
+
+with T_VAL:
+    th = tabla_historia()
+    partes = []
+    if r.valor_justo and precio:
+        dif = precio / r.valor_justo - 1
+        partes.append(f"Su **valor justo estimado** es {f_num(r.valor_justo)} {mon}: el precio está un **{abs(dif) * 100:.0f}% "
+                      f"{'por encima' if dif > 0 else 'por debajo'}**.")
+    j_per = juicio_sector(m.get("per"), ref.get("per"))
+    if j_per:
+        partes.append(f"Frente a su sector, su PER ({f_x(m.get('per'))}) está **{j_per}**.")
+    if not th.empty:
+        mb = th["Más barata que el % del periodo"].mean()
+        partes.append("Frente a su propia historia reciente cotiza " +
+                      ("**barata**." if mb >= 0.7 else "**cara**." if mb <= 0.3 else "en **zona media**."))
+    if partes:
+        conclusion(" ".join(partes))
+
+    st.markdown("#### 🎯 Precio frente a lo que podría valer")
+    st.caption("El valor justo es la mediana de tres métodos (DCF, Graham y objetivo de los analistas). "
+               "La zona de compra deja un margen de seguridad por si el cálculo es optimista.")
     est = {"Precio actual": precio, "DCF": m.get("valor_dcf"), "Graham": m.get("valor_graham"),
            "Objetivo analistas": m.get("precio_objetivo"), "Valor justo (mediana)": r.valor_justo,
            "Zona de compra": r.precio_compra}
@@ -311,7 +380,40 @@ with T_VAL:
                       xaxis=dict(range=[0, max(est.values()) * 1.25] if est else None))
     st.plotly_chart(fig, width="stretch")
 
-    st.subheader("Descuento de flujos de caja (DCF)")
+
+    st.markdown("#### 🏷️ Frente a su sector")
+    filas = [("PER", m.get("per"), ref["per"]), ("EV/EBITDA", m.get("ev_ebitda"), ref["ev"]),
+             ("Precio/Valor contable", m.get("p_vc"), ref["pvc"])]
+    st.dataframe(pd.DataFrame([{"Múltiplo": n, "Empresa": f_x(v), "Barato si ≤": f_x(rf[0]) if rf else "—",
+                                "Caro si ≥": f_x(rf[1]) if rf else "—", "Juicio": (juicio_sector(v, rf) or "—").capitalize()}
+                               for n, v, rf in filas]), hide_index=True, width="stretch")
+    st.caption(f"Referencias para el sector **{sc.SECTORES_ES.get(e.sector, e.sector)}**: lo que es barato en un sector "
+               "puede ser caro en otro. Para compararla con empresas concretas, usa la pestaña 🆚 Competencia.")
+
+    st.markdown("#### 🕰️ Frente a su propia historia")
+    if hm.empty or th.empty:
+        st.caption("No hay suficientes datos (cuentas anuales en la misma moneda que la cotización) para reconstruir su histórico.")
+    else:
+        vista_th = th.copy()
+        for c_ in ("Hoy", "Mediana", "Mínimo", "Máximo"):
+            vista_th[c_] = [f_pct(v) if mult == "Rentabilidad FCF" else f_x(v) for mult, v in zip(th["Múltiplo"], th[c_])]
+        st.dataframe(vista_th, hide_index=True, width="stretch", column_config={
+            "Más barata que el % del periodo": st.column_config.ProgressColumn(min_value=0, max_value=1, format="percent")})
+        elegido = st.segmented_control("Ver la evolución de", [c for c in SENTIDO_HIST if hm[c].notna().sum() >= 10],
+                                       default="PER" if hm["PER"].notna().sum() >= 10 else None, key="hist_multiplo")
+        if elegido:
+            s_ = hm[elegido].dropna()
+            fig = go.Figure()
+            fig.add_scatter(x=s_.index, y=s_, mode="lines", name=elegido, line=dict(color=AZUL, width=2))
+            fig.add_hline(y=s_.median(), line=dict(color=GRIS, dash="dash"), annotation_text="mediana")
+            fig.add_scatter(x=[s_.index[-1]], y=[s_.iloc[-1]], mode="markers", marker=dict(size=10, color="#222"), name="hoy")
+            fig.update_layout(height=320, margin=dict(l=10, r=10, t=10, b=10), showlegend=False,
+                              yaxis_tickformat=".1%" if elegido == "Rentabilidad FCF" else None)
+            st.plotly_chart(fig, width="stretch")
+        st.caption(f"Calculado cada semana con el precio de ese día y las últimas cuentas anuales publicadas "
+                   f"({hm.index[0]:%m/%Y} – {hm.index[-1]:%m/%Y}). Yahoo solo ofrece ~4 ejercicios, por eso el periodo es corto.")
+
+    st.markdown("#### 🧮 Cálculo del DCF (descuento de flujos de caja)")
     if not m.get("misma_moneda", True):
         st.info(f"La empresa reporta en {e.moneda_fin} y cotiza en {mon}: el DCF por acción no se calcula para no mezclar monedas.")
     elif not m.get("fcf_base_dcf") or m["fcf_base_dcf"] <= 0:
@@ -323,7 +425,7 @@ with T_VAL:
         d3.metric("Tasa de descuento", f_pct(wacc))
         metrica(d4, "Valor por acción (DCF)", f"{f_num(m.get('valor_dcf'))} {mon}", f_pct(m.get("margen_seguridad_dcf")), clave="dcf")
         st.caption("Dos etapas: el crecimiento elegido durante 5 años, que converge hasta el terminal en el año 10. "
-                   "Al valor de la empresa se le resta la deuda neta. Cambia los supuestos en la barra lateral.")
+                   "Al valor de la empresa se le resta la deuda neta. Los supuestos se cambian en ⚙️ Ajustes del modelo (barra lateral).")
         # Sensibilidad
         tasas = [wacc - 0.02, wacc - 0.01, wacc, wacc + 0.01, wacc + 0.02]
         crecs = [m["crecimiento_dcf"] + d for d in (-0.04, -0.02, 0, 0.02, 0.04)]
@@ -340,16 +442,22 @@ with T_VAL:
             if v is None or pd.isna(v) or not precio:
                 return ""
             return f"background-color: {'#bfe6cf' if v > precio * 1.15 else '#f4c7c7' if v < precio else '#f7e3a8'}"
-        st.markdown("**Sensibilidad del valor por acción** (verde: > 15% sobre el precio · rojo: por debajo del precio)")
-        st.dataframe(sens.style.format(lambda v: f_num(v)).map(pintar), width="stretch")
+        with st.expander("¿Y si los supuestos cambian? Tabla de sensibilidad"):
+            st.caption("Valor por acción con otras tasas de descuento y crecimientos. Verde: más de un 15% sobre el precio · "
+                       "rojo: por debajo del precio.")
+            st.dataframe(sens.style.format(lambda v: f_num(v)).map(pintar), width="stretch")
 
-    st.subheader("Múltiplos frente a la referencia del sector")
-    ref = sc.SECTORES.get(e.sector, sc.SECTOR_DEFECTO)
-    filas = [("PER", m.get("per"), ref["per"]), ("EV/EBITDA", m.get("ev_ebitda"), ref["ev"]),
-             ("Precio/Valor contable", m.get("p_vc"), ref["pvc"])]
-    st.dataframe(pd.DataFrame([{"Múltiplo": n, "Empresa": f_x(v), "Barato (≤)": f_x(rf[0]) if rf else "—",
-                                "Caro (≥)": f_x(rf[1]) if rf else "—"} for n, v, rf in filas]),
-                 hide_index=True, width="stretch")
+
+    st.markdown("#### 📋 Todos los múltiplos")
+    c1, c2, c3, c4 = st.columns(4)
+    metrica(c1, "PER", f_x(m.get("per")), clave="per")
+    metrica(c2, "PER futuro", f_x(m.get("per_fwd")), clave="per_fwd")
+    metrica(c3, "EV/EBITDA", f_x(m.get("ev_ebitda")), clave="ev_ebitda")
+    metrica(c4, "Precio / valor contable", f_x(m.get("p_vc")), clave="p_vc")
+    metrica(c1, "PEG", f_x(m.get("peg"), 2), clave="peg")
+    metrica(c2, "Precio / ventas", f_x(m.get("p_ventas")), clave="p_ventas")
+    metrica(c3, "Rentabilidad FCF", f_pct(m.get("fcf_yield")), clave="fcf_yield")
+    metrica(c4, "Valor empresa (EV)", f_dinero(m.get("ev"), mon), clave="ev")
 
 # Finanzas --------------------------------------------------------------------
 with T_FIN:
@@ -366,18 +474,41 @@ with T_FIN:
         return pd.DataFrame(cols).sort_index()
 
     df1 = a_df(["Ingresos", "EBITDA", "Beneficio neto", "Flujo de caja libre"])
+    partes = []
+    if "Ingresos" in df1 and df1["Ingresos"].dropna().size >= 2:
+        ing = df1["Ingresos"].dropna()
+        n_a = ing.index[-1] - ing.index[0]
+        if n_a > 0 and ing.iloc[0] > 0 and ing.iloc[-1] > 0:
+            cagr = (ing.iloc[-1] / ing.iloc[0]) ** (1 / n_a) - 1
+            partes.append(f"Las ventas {'crecen' if cagr > 0.01 else 'caen' if cagr < -0.01 else 'están estancadas'} "
+                          f"(**{f_pct(cagr)} al año** entre {ing.index[0]} y {ing.index[-1]}).")
+        if "Beneficio neto" in df1:
+            mg_ = (df1["Beneficio neto"] / df1["Ingresos"]).dropna()
+            if len(mg_) >= 2:
+                cambio = mg_.iloc[-1] - mg_.iloc[0]
+                partes.append(f"El margen neto es del **{f_pct(mg_.iloc[-1])}** y "
+                              + ("**mejora**." if cambio > 0.01 else "**empeora**." if cambio < -0.01 else "se mantiene **estable**."))
+    dne = m.get("deuda_neta_ebitda")
+    if dne is not None:
+        partes.append("Deuda " + ("**muy baja o caja neta**" if dne <= 0.5 else "**controlada**" if dne < 2.5 else
+                                  "**elevada**" if dne < 4 else "**muy elevada**") + f" ({f_x(dne)} su EBITDA).")
+    if m.get("piotroski") is not None:
+        pio = m["piotroski"]
+        partes.append(f"Salud contable (Piotroski) **{f_num(pio, 0)}/9**: " + ("buena." if pio >= 7 else "normal." if pio >= 4 else "débil."))
+    if partes:
+        conclusion(" ".join(partes))
     if df1.empty:
         st.info("Yahoo no tiene estados financieros anuales para este valor.")
     else:
-        st.subheader(f"Cuenta de resultados y caja ({e.moneda_fin})")
+        st.markdown(f"#### 💰 Ventas, beneficios y caja ({e.moneda_fin})")
         fig = go.Figure()
         for col, colr in zip(df1.columns, [GRIS, "#7aa6f0", AZUL, COLOR["Comprar"]]):
             fig.add_bar(x=df1.index.astype(str), y=df1[col], name=col, marker_color=colr)
-        fig.update_layout(barmode="group", height=380, margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h"))
+        fig.update_layout(barmode="group", height=360, xaxis=dict(type="category"), margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h"))
         st.plotly_chart(fig, width="stretch")
 
         if "Ingresos" in df1:
-            st.subheader("Márgenes")
+            st.markdown("#### 📐 Márgenes: qué parte de cada venta se queda")
             mg = pd.DataFrame(index=df1.index)
             for col, nombre in (("EBITDA", "Margen EBITDA"), ("Beneficio neto", "Margen neto"), ("Flujo de caja libre", "Margen FCF")):
                 if col in df1:
@@ -385,21 +516,22 @@ with T_FIN:
             fig = go.Figure()
             for col in mg:
                 fig.add_scatter(x=mg.index.astype(str), y=mg[col], name=col, mode="lines+markers")
-            fig.update_layout(height=300, yaxis_tickformat=".0%", margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h"))
+            fig.update_layout(height=300, yaxis_tickformat=".0%", margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h"),
+                              xaxis=dict(type="category"))
             st.plotly_chart(fig, width="stretch")
 
     df2 = a_df(["Patrimonio neto", "Deuda total", "Caja"])
     if not df2.empty:
-        st.subheader("Balance")
+        st.markdown("#### 🏦 Balance: lo que tiene y lo que debe")
         fig = go.Figure()
         for col, colr in zip(df2.columns, [AZUL, COLOR["Vender"], COLOR["Comprar"]]):
             fig.add_bar(x=df2.index.astype(str), y=df2[col], name=col, marker_color=colr)
-        fig.update_layout(barmode="group", height=320, margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h"))
+        fig.update_layout(barmode="group", height=320, xaxis=dict(type="category"), margin=dict(l=10, r=10, t=10, b=10), legend=dict(orientation="h"))
         st.plotly_chart(fig, width="stretch")
 
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("Salud financiera")
+        st.markdown("#### 🩺 Indicadores de salud financiera")
         st.dataframe(pd.DataFrame([
             ("Deuda neta", f_dinero(m.get("deuda_neta"), e.moneda_fin)),
             ("Deuda neta / EBITDA", f_x(m.get("deuda_neta_ebitda"))),
@@ -411,7 +543,7 @@ with T_FIN:
             ("ROE", f_pct(m.get("roe"))), ("ROIC aprox.", f_pct(m.get("roic"))), ("ROA", f_pct(m.get("roa"))),
         ], columns=["Indicador", "Valor"]), hide_index=True, width="stretch")
     with c2:
-        st.subheader(f"Piotroski F-Score: {f_num(m.get('piotroski'), 1)}/9")
+        st.markdown(f"#### ✅ Piotroski: {f_num(m.get('piotroski'), 0)}/9")
         for nombre, ok in m.get("piotroski_detalle", []):
             st.markdown(f"{'✅' if ok else '❌' if ok is False else '➖'} {nombre}")
         st.caption("➖ = sin datos. Si faltan criterios, la nota se escala a 9.")
@@ -422,7 +554,31 @@ with T_TEC:
     if t.empty:
         st.info("Sin histórico de precios.")
     else:
-        rango = st.radio("Periodo", ["6M", "1A", "2A", "5A"], index=1, horizontal=True)
+        partes = []
+        sma200, sobre = m.get("sobre_sma200"), m.get("sobre_sma200")
+        u = t.iloc[-1]
+        if pd.notna(u.get("SMA200")) and pd.notna(u.get("SMA50")):
+            alc = u["Close"] > u["SMA200"] and u["SMA50"] > u["SMA200"]
+            baj = u["Close"] < u["SMA200"] and u["SMA50"] < u["SMA200"]
+            partes.append("Tendencia **" + ("alcista" if alc else "bajista" if baj else "indefinida") + "**: el precio está "
+                          f"{'por encima' if u['Close'] > u['SMA200'] else 'por debajo'} de su media de 200 sesiones "
+                          f"({f_pct(sobre)}).")
+        if m.get("rsi") is not None:
+            rsi = m["rsi"]
+            partes.append(f"RSI {rsi:.0f}: " + ("**sobrecompra** (ha subido mucho y rápido)." if rsi >= 70 else
+                                                 "**sobreventa** (ha caído mucho y rápido)." if rsi <= 30 else "zona **neutral**."))
+        if m.get("drawdown_actual") is not None:
+            partes.append(f"Está un {f_pct(m['drawdown_actual'])} respecto a su máximo.")
+        if partes:
+            conclusion(" ".join(partes))
+        c = st.columns(6)
+        for col, (nombre, val) in zip(c, [("1 mes", m.get("rent_1m")), ("3 meses", m.get("rent_3m")), ("6 meses", m.get("rent_6m")),
+                                           ("1 año", m.get("rent_1a")), ("3 años", m.get("rent_3a")), ("Volatilidad anual", m.get("volatilidad"))]):
+            metrica(col, nombre, f_pct(val), clave="volatilidad" if nombre.startswith("Volatilidad") else None)
+        st.markdown("#### 🕯️ Gráfico con indicadores")
+        st.caption("Velas = precio de cada día · naranja y morada = medias de 50 y 200 sesiones · punteadas = bandas de Bollinger · "
+                   "debajo: volumen, RSI y MACD. Para dibujar y probar estrategias, usa el 🎯 Simulador.")
+        rango = st.segmented_control("Periodo", ["6M", "1A", "2A", "5A"], default="1A", key="tec_periodo") or "1A"
         n = {"6M": 126, "1A": 252, "2A": 504, "5A": 1260}[rango]
         v = t.iloc[-n:]
         fig = make_subplots(rows=4, cols=1, shared_xaxes=True, row_heights=[0.55, 0.12, 0.16, 0.17], vertical_spacing=0.02)
@@ -448,10 +604,7 @@ with T_TEC:
         fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"])])
         st.plotly_chart(fig, width="stretch")
 
-        c = st.columns(6)
-        for col, (nombre, val) in zip(c, [("1 mes", m.get("rent_1m")), ("3 meses", m.get("rent_3m")), ("6 meses", m.get("rent_6m")),
-                                           ("1 año", m.get("rent_1a")), ("3 años", m.get("rent_3a")), ("Volatilidad anual", m.get("volatilidad"))]):
-            metrica(col, nombre, f_pct(val), clave="volatilidad" if nombre.startswith("Volatilidad") else None)
+        st.markdown("#### 📏 Indicadores")
         c = st.columns(6)
         metrica(c[0], "RSI (14)", f_num(m.get("rsi"), 0), clave="rsi")
         metrica(c[1], "vs media 200", f_pct(m.get("sobre_sma200")), clave="medias")
@@ -462,10 +615,25 @@ with T_TEC:
 
 # Dividendos ------------------------------------------------------------------
 with T_DIV:
+    rd = m.get("rent_dividendo")
+    if not rd:
+        conclusion("No paga dividendo (o no ha pagado en los últimos 12 meses).")
+    else:
+        po = m.get("payout")
+        txt = f"Paga un **{f_pct(rd, 2)}** al año"
+        if po is not None:
+            txt += (f" y reparte el **{f_pct(po, 0)}** de su beneficio: " +
+                    ("margen amplio para mantenerlo." if po < 0.6 else "algo justo." if po < 0.9 else "**reparte casi todo o más de lo que gana**, ojo."))
+        else:
+            txt += "."
+        if m.get("anos_sin_recorte"):
+            txt += f" Lleva **{m['anos_sin_recorte']} años sin recortarlo**"
+            txt += f" y lo ha subido un {f_pct(m.get('cagr_dividendo_5a'))} al año." if m.get("cagr_dividendo_5a") else "."
+        conclusion(txt)
     c = st.columns(4)
     metrica(c[0], "Rentabilidad (12 m)", f_pct(m.get("rent_dividendo"), 2), clave="rent_dividendo")
     metrica(c[1], "Payout", f_pct(m.get("payout"), 0), clave="payout")
-    c[2].metric("Crecimiento anual 5a", f_pct(m.get("cagr_dividendo_5a")))
+    c[2].metric("Crecimiento anual (5 años)", f_pct(m.get("cagr_dividendo_5a")))
     c[3].metric("Años sin recortar", m.get("anos_sin_recorte", 0))
     da = m.get("div_anuales")
     if da is None or len(da) == 0:
@@ -473,59 +641,17 @@ with T_DIV:
     else:
         fig = go.Figure(go.Bar(x=da.index.astype(str), y=da.values, marker_color=AZUL,
                                text=[f_num(x, 3) for x in da.values], textposition="outside"))
-        fig.update_layout(height=340, margin=dict(l=10, r=10, t=30, b=10), title=f"Dividendo por acción y año ({mon}, años completos)")
+        st.markdown(f"#### 📅 Dividendo por acción y año ({mon})")
+        fig.update_layout(height=320, margin=dict(l=10, r=10, t=20, b=10), xaxis=dict(type="category"))
         st.plotly_chart(fig, width="stretch")
 
-
-# Histórico de múltiplos ------------------------------------------------------
-with T_HIS:
-    from comun import historico
-    hm = historico(ticker)
-    if hm.empty:
-        st.info("No hay suficientes datos (cuentas anuales en la misma moneda que la cotización) para reconstruir el histórico.")
-    else:
-        st.caption(f"Múltiplos calculados cada semana con el precio de ese día y las últimas cuentas anuales publicadas "
-                   f"(se asume que se publican 90 días después del cierre). Periodo: {hm.index[0]:%m/%Y} – {hm.index[-1]:%m/%Y}. "
-                   "Yahoo solo ofrece ~4 ejercicios, por eso el histórico es corto.")
-        # True = un valor más bajo es más barato
-        sentido = {"PER": True, "Precio/Valor contable": True, "Precio/Ventas": True, "EV/EBITDA": True, "Rentabilidad FCF": False}
-        filas = []
-        for col, bajo_barato in sentido.items():
-            s = hm[col].dropna()
-            if len(s) < 10:
-                continue
-            actual = s.iloc[-1]
-            barato_que = (s > actual).mean() if bajo_barato else (s < actual).mean()
-            filas.append({"Múltiplo": col, "Actual": actual, "Mediana": s.median(), "Mínimo": s.min(), "Máximo": s.max(),
-                          "Más barata que el % del periodo": barato_que})
-        if filas:
-            tabla = pd.DataFrame(filas)
-            st.dataframe(tabla, hide_index=True, width="stretch", column_config={
-                "Actual": st.column_config.NumberColumn(format="%.2f"), "Mediana": st.column_config.NumberColumn(format="%.2f"),
-                "Mínimo": st.column_config.NumberColumn(format="%.2f"), "Máximo": st.column_config.NumberColumn(format="%.2f"),
-                "Más barata que el % del periodo": st.column_config.ProgressColumn(min_value=0, max_value=1, format="percent")})
-            media_bar = tabla["Más barata que el % del periodo"].mean()
-            if media_bar >= 0.7:
-                st.success(f"Respecto a su propia historia reciente cotiza **barata**: de media, más barata que el {media_bar * 100:.0f}% del periodo.")
-            elif media_bar <= 0.3:
-                st.warning(f"Respecto a su propia historia reciente cotiza **cara**: solo más barata que el {media_bar * 100:.0f}% del periodo.")
-            else:
-                st.info(f"Respecto a su propia historia reciente cotiza en **zona media** (más barata que el {media_bar * 100:.0f}% del periodo).")
-        elegido = st.radio("Ver", [c for c in sentido if hm[c].notna().sum() >= 10], horizontal=True)
-        s = hm[elegido].dropna()
-        fig = go.Figure()
-        fig.add_scatter(x=s.index, y=s, mode="lines", name=elegido, line=dict(color=AZUL, width=2))
-        fig.add_hline(y=s.median(), line=dict(color=GRIS, dash="dash"), annotation_text="mediana")
-        fig.add_scatter(x=[s.index[-1]], y=[s.iloc[-1]], mode="markers", marker=dict(size=10, color="#222"), name="hoy")
-        fig.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10), showlegend=False,
-                          yaxis_tickformat=".1%" if elegido == "Rentabilidad FCF" else None)
-        st.plotly_chart(fig, width="stretch")
 
 # Competidores ----------------------------------------------------------------
 with T_COMP:
-    from comun import cargar_varias, config_columnas, fila_resumen
+    from comun import COLUMNAS_ESCANER, cargar_varias, config_columnas, fila_resumen
     sugeridos = competidores(ticker)
-    st.write("Compara la empresa con su competencia usando exactamente los mismos criterios.")
+    st.markdown("Compara la empresa con su competencia **usando exactamente los mismos criterios**. "
+                "Para ver el sector entero, usa la sección 🏭 Sectores.")
     if sugeridos:
         st.caption("Sugeridos: las mayores empresas de su industria según Yahoo (suele tirar hacia EE. UU.). "
                    "Añade o quita los que quieras, por ejemplo competidores europeos.")
@@ -534,7 +660,7 @@ with T_COMP:
     lista_peers = st.text_input("Competidores (tickers separados por comas)", value=", ".join(sugeridos), key=f"peers_{ticker}")
     peers = [x.strip().upper() for x in lista_peers.split(",") if x.strip() and x.strip().upper() != ticker][:12]
     clave = f"comp_{ticker}_{','.join(peers)}"
-    if st.button("Comparar con la competencia", type="primary", disabled=not peers):
+    if st.button("🆚 Comparar", type="primary", disabled=not peers):
         cargadas = cargar_varias(peers, "Descargando competidores")
         filas = [fila_resumen(ticker, e, m, r)]
         for tk2, e2 in cargadas.items():
@@ -550,27 +676,29 @@ with T_COMP:
     comp = st.session_state.get(clave)
     if comp is not None and len(comp) > 1:
         comp = comp.sort_values("Nota", ascending=False, na_position="last")
-        st.dataframe(comp, hide_index=True, width="stretch", column_config=config_columnas())
-        # Posición de la empresa dentro del grupo
         yo = comp[comp["Ticker"] == ticker].iloc[0]
         otros = comp[comp["Ticker"] != ticker]
-        criterios = [("Nota", True, "Nota global"), ("PER", False, "PER (más barato)"), ("EV/EBITDA", False, "EV/EBITDA (más barato)"),
-                     ("ROE", True, "ROE"), ("Margen op.", True, "Margen operativo"),
-                     ("Crec. ingresos", True, "Crecimiento"), ("Deuda neta/EBITDA", False, "Endeudamiento (menos deuda)")]
+        puesto = list(comp["Ticker"]).index(ticker) + 1
+        criterios = [("PER", False, "más barata por PER"), ("EV/EBITDA", False, "más barata por EV/EBITDA"),
+                     ("ROE", True, "más rentable (ROE)"), ("Margen op.", True, "con más margen"),
+                     ("Crec. ingresos", True, "que más crece"), ("Deuda neta/EBITDA", False, "con menos deuda")]
         frases = []
         for col, alto_mejor, nombre in criterios:
             if pd.isna(yo.get(col)) or otros[col].dropna().empty:
                 continue
             o = otros[col].dropna()
             mejor_que = (o < yo[col]).sum() if alto_mejor else (o > yo[col]).sum()
-            frases.append(f"- **{nombre}**: mejor que {mejor_que} de {len(o)}")
+            frases.append(f"- {nombre.capitalize()}: mejor que **{mejor_que} de {len(o)}**")
+        conclusion(f"Con la misma vara de medir, **{e.nombre}** queda **{puesto}ª de {len(comp)}** por nota global.")
         if frases:
-            st.markdown(f"**{e.nombre} frente a su competencia:**\n" + "\n".join(frases))
+            st.markdown("\n".join(frases))
         fig = go.Figure(go.Bar(x=comp["Ticker"], y=comp["Nota"],
                                marker_color=["#222" if t == ticker else COLOR.get(v, GRIS) for t, v in zip(comp["Ticker"], comp["Veredicto"])],
                                text=comp["Veredicto"], textposition="outside"))
-        fig.update_layout(height=320, yaxis=dict(range=[0, 105]), margin=dict(l=10, r=10, t=10, b=10))
+        fig.update_layout(height=300, yaxis=dict(range=[0, 105], title="Nota"), margin=dict(l=10, r=10, t=10, b=10))
         st.plotly_chart(fig, width="stretch")
+        st.dataframe(comp, hide_index=True, width="stretch", column_config=config_columnas(),
+                     column_order=[c_ for c_ in COLUMNAS_ESCANER if c_ in comp])
 
 # Análisis con IA -------------------------------------------------------------
 if MOSTRAR_IA:
@@ -639,45 +767,48 @@ if MOSTRAR_IA:
             st.markdown(st.session_state[f"ia_{ticker}"])
             st.caption("Generado por IA a partir de datos públicos. Puede contener errores: contrasta lo importante. No es asesoramiento financiero.")
 
-# Tesis y eventos ---------------------------------------------------------------
-with T_TESIS:
-    import tesis_ui
-    tesis_ui.pestaña(ticker, e.nombre, e, m, r, mon)
+# Resultados y eventos / Mi tesis ----------------------------------------------------
+import tesis_ui
 
-# Metodología -----------------------------------------------------------------
+with T_EVE:
+    tesis_ui._seccion_eventos(ticker, e.nombre, e, mon)
+with T_TESIS:
+    tesis_ui._seccion_tesis(ticker, e.nombre, m, r, precio, mon)
+
+# Cómo se calcula ---------------------------------------------------------------
 with T_MET:
     st.markdown(f"""
-### 📖 Glosario
-Pincha en cualquier dato con el icono ⓘ para ver su definición. Aquí las tienes todas:
-
-""" + "\n".join(f"- **{t}**: {que}" + (f" {como}" if como else "") for t, que, como in __import__("glosario").G.values()) + f"""
-
-### Cómo se llega al veredicto
+#### 🧭 Cómo se llega al veredicto
 1. **Cada métrica se puntúa de 0 a 100** entre un valor "malo" y uno "bueno". Los umbrales de PER, EV/EBITDA,
    P/VC, margen operativo, ROE y deuda cambian **según el sector** (un PER de 20 es barato en tecnología y caro en energía).
 2. Las métricas se agrupan en **7 pilares**: valoración, calidad, salud financiera, crecimiento, dividendo, técnico y analistas.
    Si un pilar no tiene datos (p. ej. no paga dividendo), su peso se reparte entre los demás.
-3. **Nota global** = media ponderada de los pilares con los pesos de la barra lateral.
+3. **Nota global** = media ponderada de los pilares (pesos en ⚙️ Ajustes del modelo, barra lateral).
 4. **Veredicto**: Comprar si la nota es ≥ {u_comprar}, Vender si es < {u_vender}, Esperar en medio.
 5. **Alertas que limitan**: aunque la nota dé Comprar, se baja a Esperar si hay riesgo de quiebra (Altman Z < 1,81),
    Piotroski ≤ 2, quema de caja con deuda alta, tendencia bajista fuerte (opcional) o pocos datos.
 6. **Valor justo** = mediana de DCF, número de Graham y precio objetivo de analistas (si hay ≥ 3).
    **Zona de compra** = valor justo menos el margen de seguridad.
 
-### Particularidades
+#### 🗂️ Qué hay en cada pestaña
+- **🧭 Resumen**: puntos fuertes y débiles y la nota de cada pilar.
+- **💶 Valoración**: si está cara o barata frente a su valor, su sector y su propia historia.
+- **📊 Finanzas**: ventas, beneficios, márgenes, deuda y salud contable.
+- **📉 Gráfico**: tendencia, medias, RSI, MACD y volumen.
+- **💸 Dividendos** · **🆚 Competencia**: lo que paga y cómo queda frente a sus rivales.
+- **📅 Resultados**: próximas fechas, previa con escenarios e historial de sorpresas.
+- **📌 Mi tesis**: tu razón para seguirla, comprobada con datos.
+
+#### ⚠️ Particularidades
 - **Bancos y aseguradoras**: no se usan EV/EBITDA, DCF ni deuda/EBITDA (la deuda es su negocio). Pesa más el P/VC y el ROE.
 - **Inmobiliarias**: más tolerancia a la deuda y más peso al P/VC; no se usa Altman Z.
 - Si la empresa **reporta en otra moneda** (ADRs, algunas europeas en EE. UU.), se omiten DCF, Graham y Altman.
 
-### Más allá de los números de hoy
-- **Histórico**: compara los múltiplos actuales con los de la propia empresa en los últimos años.
-- **Competidores**: misma nota y mismas métricas para su competencia directa.
-- **Simulador** (menú lateral): qué habría pasado operando la acción a tus precios de compra y venta, o con las señales del modelo.
-- **Escáner** (menú lateral): recorre un índice entero y ordena las oportunidades.
-- **Backtest** (menú lateral): comprueba si el veredicto habría acertado en años anteriores. Úsalo para ajustar los pesos.
-
-### Limitaciones
+#### 🚧 Limitaciones
 - Datos de Yahoo Finance: gratuitos pero no auditados; pueden faltar o venir con errores, sobre todo en bolsas pequeñas.
 - El modelo es mecánico: no sabe nada de noticias, gestión, ventajas competitivas ni del ciclo del sector.
 - Es una herramienta de apoyo para tu propio análisis, **no una recomendación de inversión**.
 """)
+    with st.expander("📖 Glosario: todas las definiciones"):
+        st.caption("También puedes pinchar en cualquier dato con el icono ⓘ para ver su definición.")
+        st.markdown("\n".join(f"- **{t}**: {que}" + (f" {como}" if como else "") for t, que, como in glosario.G.values()))

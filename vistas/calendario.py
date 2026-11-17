@@ -10,11 +10,9 @@ import usuario as us
 import previa
 from comun import abrir_empresa, buscar, cargar_opcional, eventos_empresa, precios_max
 
-st.sidebar.title("📅 Calendario")
-st.title("📅 Calendario de eventos")
-st.caption("Lo que puede mover tus empresas en las próximas semanas: presentaciones de resultados, dividendos, "
-           "decisiones de tipos de interés y los eventos que apuntes tú. Las fechas de resultados a veces cambian: "
-           "confírmalas en la web de la empresa cuando se acerquen.")
+st.title("📅 Calendario")
+st.caption("Lo que puede mover tus empresas: presentaciones de resultados, dividendos, decisiones de tipos de interés "
+           "y los eventos que apuntes tú. Las fechas de resultados a veces cambian: confírmalas cuando se acerquen.")
 
 if not us.cargado():
     st.info("Cargando tus datos guardados…")
@@ -51,7 +49,7 @@ hoy = pd.Timestamp.today().normalize()
 fin = hoy + pd.Timedelta(days=dias)
 
 if not universo:
-    st.info("Todavía no sigues ninguna empresa. Añade favoritos (☆ en **Analizar empresa**) o escribe tickers arriba; "
+    st.info("Todavía no sigues ninguna empresa. Pulsa **☆ Seguir** en **Analizar empresa** o escribe tickers arriba; "
             "mientras, aquí tienes las decisiones de los bancos centrales.")
 
 eventos, historicos, sin_eventos, evs = [], {}, [], {}
@@ -119,67 +117,75 @@ for col, (titulo, ini, fin_s) in zip(cols, semanas):
             st.caption("💡 Hay resultados de empresas en las que tienes tesis: repasa qué pilar pondrán a prueba "
                        "y decide antes qué harás si sorprenden para bien o para mal.")
 
-# Previas de resultados ---------------------------------------------------------
 proximas = sorted([(min(x["fecha"] for x in ev["proximos"] if x["tipo"] == "Resultados"), tk) for tk, ev in evs.items()
                    if any(x["tipo"] == "Resultados" and hoy <= x["fecha"] <= hoy + pd.Timedelta(days=14) for x in ev["proximos"])])
-if proximas:
-    st.subheader(f"🔮 Previas de resultados ({len(proximas)})")
-    st.caption("Las empresas que presentan en las próximas dos semanas: qué se espera, qué vigilar, tres escenarios y tu plan.")
-    for f, tk in proximas:
-        with st.expander(f"{f:%d/%m} · {tk} {nombres.get(tk, '')} {posicion(tk)}"):
-            e_tk = cargar_opcional(tk)
-            hist = precios_max(tk)
-            precio = float(hist["Close"].dropna().iloc[-1]) if hist is not None and len(hist) else None
-            pv = previa.construir(evs[tk], hist, precio)
-            if pv:
-                previa.mostrar(pv, getattr(e_tk, "sector", None), tesis_d.get(tk),
-                               (e_tk.info.get("currency") if e_tk is not None else "") or "", tk)
 
-# Tabla completa ---------------------------------------------------------------
-st.subheader(f"Próximos eventos ({len(proximos)})")
-if proximos:
-    df = pd.DataFrame([{"Fecha": x["fecha"].date(), "Faltan (días)": (x["fecha"] - hoy).days,
-                        "Tipo": f"{agenda.TIPO_ICONO.get(x['tipo'], '')} {x['tipo']}", "Ticker": x["ticker"],
-                        "Empresa": x.get("empresa", ""), "Evento": x["texto"],
-                        "Impacto": agenda.IMPACTO_ICONO.get(x["impacto"], x["impacto"]), "Tú": posicion(x["ticker"]) if x["tipo"] != "Macro" else ""}
-                       for x in proximos])
-    filtro = st.multiselect("Tipos", sorted(df["Tipo"].unique()), default=sorted(df["Tipo"].unique()))
-    st.dataframe(df[df["Tipo"].isin(filtro)], hide_index=True, width="stretch",
-                 column_config={"Fecha": st.column_config.DateColumn(format="DD/MM/YYYY")})
-    c1, c2, c3 = st.columns([2, 1, 1], vertical_alignment="bottom")
-    con_tk = sorted({x["ticker"] for x in proximos if x["tipo"] != "Macro"})
-    if con_tk:
-        sel = c1.selectbox("Abrir empresa", con_tk, format_func=lambda t: f"{t} · {nombres.get(t, '')}", key="cal_sel")
-        if c2.button("🔎 Analizar", width="stretch"):
-            abrir_empresa(sel)
-    c3.download_button("📆 Pasar a mi calendario", agenda.ics(proximos), file_name="eventos_inversion.ics", mime="text/calendar",
-                       width="stretch", help="Descarga un archivo .ics que puedes abrir con Google Calendar, Outlook o el calendario del móvil")
-else:
-    st.caption("No hay eventos en este periodo.")
-if sin_eventos:
-    st.caption(f"Yahoo no tiene próximos eventos anunciados para: {', '.join(sin_eventos)}.")
+st.write("")
+t_todos, t_prev, t_pasado = st.tabs([f"🗓️ Todos los eventos ({len(proximos)})", f"🔮 Previas de resultados ({len(proximas)})",
+                                     "🗂️ Resultados recientes"])
+with t_todos:
+    # Tabla completa ---------------------------------------------------------------
+    if proximos:
+        df = pd.DataFrame([{"Fecha": x["fecha"].date(), "Faltan (días)": (x["fecha"] - hoy).days,
+                            "Tipo": f"{agenda.TIPO_ICONO.get(x['tipo'], '')} {x['tipo']}", "Ticker": x["ticker"],
+                            "Empresa": x.get("empresa", ""), "Evento": x["texto"],
+                            "Impacto": agenda.IMPACTO_ICONO.get(x["impacto"], x["impacto"]), "Tú": posicion(x["ticker"]) if x["tipo"] != "Macro" else ""}
+                           for x in proximos])
+        filtro = st.multiselect("Tipos", sorted(df["Tipo"].unique()), default=sorted(df["Tipo"].unique()))
+        st.dataframe(df[df["Tipo"].isin(filtro)], hide_index=True, width="stretch",
+                     column_config={"Fecha": st.column_config.DateColumn(format="DD/MM/YYYY")})
+        c1, c2, c3 = st.columns([2, 1, 1], vertical_alignment="bottom")
+        con_tk = sorted({x["ticker"] for x in proximos if x["tipo"] != "Macro"})
+        if con_tk:
+            sel = c1.selectbox("Abrir empresa", con_tk, format_func=lambda t: f"{t} · {nombres.get(t, '')}", key="cal_sel")
+            if c2.button("🔎 Analizar", width="stretch"):
+                abrir_empresa(sel)
+        c3.download_button("📆 Pasar a mi calendario", agenda.ics(proximos), file_name="eventos_inversion.ics", mime="text/calendar",
+                           width="stretch", help="Descarga un archivo .ics que puedes abrir con Google Calendar, Outlook o el calendario del móvil")
+    else:
+        st.caption("No hay eventos en este periodo.")
+    if sin_eventos:
+        st.caption(f"Yahoo no tiene próximos eventos anunciados para: {', '.join(sin_eventos)}.")
 
-# Archivo: lo que pasó ---------------------------------------------------------
-st.subheader("🗂️ Qué pasó en los últimos resultados")
-st.caption("Sorpresa del beneficio frente a lo que esperaban los analistas y cómo reaccionó la acción al día siguiente. "
-           "Con el tiempo te ayuda a ver qué empresas suelen sorprender y cómo las trata el mercado.")
-filas = []
-for tk, res in historicos.items():
-    if res is None or res.empty:
-        continue
-    df_h = agenda.historial_resultados(res.head(4), precios_max(tk))
-    for f, row in df_h.iterrows():
-        if f >= hoy - pd.Timedelta(days=120):
-            filas.append({"Fecha": f.date(), "Ticker": tk, "Empresa": nombres.get(tk, ""), "BPA esperado": row["esperado"],
-                          "BPA real": row["real"], "Sorpresa": row["sorpresa"] / 100 if pd.notna(row["sorpresa"]) else None,
-                          "Reacción": row["reaccion"], "Tú": posicion(tk)})
-if filas:
-    st.dataframe(pd.DataFrame(filas).sort_values("Fecha", ascending=False), hide_index=True, width="stretch", column_config={
-        "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"),
-        "BPA esperado": st.column_config.NumberColumn(format="%.2f"), "BPA real": st.column_config.NumberColumn(format="%.2f"),
-        "Sorpresa": st.column_config.NumberColumn(format="percent"), "Reacción": st.column_config.NumberColumn(format="percent"),
-    })
-    st.caption("Si alguna de tus empresas tiene tesis, apunta lo que pasó en su **registro de novedades** "
-               "(pestaña *Tesis y eventos*).")
-else:
-    st.caption("Sin presentaciones en los últimos 4 meses (o Yahoo no tiene sus previsiones, algo habitual fuera de EE. UU.).")
+
+with t_prev:
+    # Previas de resultados ---------------------------------------------------------
+    if proximas:
+        st.caption("Las empresas que presentan en las próximas dos semanas: qué se espera, qué vigilar, tres escenarios y tu plan.")
+        for f, tk in proximas:
+            with st.expander(f"{f:%d/%m} · {tk} {nombres.get(tk, '')} {posicion(tk)}"):
+                e_tk = cargar_opcional(tk)
+                hist = precios_max(tk)
+                precio = float(hist["Close"].dropna().iloc[-1]) if hist is not None and len(hist) else None
+                pv = previa.construir(evs[tk], hist, precio)
+                if pv:
+                    previa.mostrar(pv, getattr(e_tk, "sector", None), tesis_d.get(tk),
+                                   (e_tk.info.get("currency") if e_tk is not None else "") or "", tk)
+
+    if not proximas:
+        st.caption("Ninguna de tus empresas presenta resultados en las próximas dos semanas.")
+
+with t_pasado:
+    # Archivo: lo que pasó ---------------------------------------------------------
+    st.caption("Sorpresa del beneficio frente a lo que esperaban los analistas y cómo reaccionó la acción al día siguiente. "
+               "Con el tiempo te ayuda a ver qué empresas suelen sorprender y cómo las trata el mercado.")
+    filas = []
+    for tk, res in historicos.items():
+        if res is None or res.empty:
+            continue
+        df_h = agenda.historial_resultados(res.head(4), precios_max(tk))
+        for f, row in df_h.iterrows():
+            if f >= hoy - pd.Timedelta(days=120):
+                filas.append({"Fecha": f.date(), "Ticker": tk, "Empresa": nombres.get(tk, ""), "BPA esperado": row["esperado"],
+                              "BPA real": row["real"], "Sorpresa": row["sorpresa"] / 100 if pd.notna(row["sorpresa"]) else None,
+                              "Reacción": row["reaccion"], "Tú": posicion(tk)})
+    if filas:
+        st.dataframe(pd.DataFrame(filas).sort_values("Fecha", ascending=False), hide_index=True, width="stretch", column_config={
+            "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"),
+            "BPA esperado": st.column_config.NumberColumn(format="%.2f"), "BPA real": st.column_config.NumberColumn(format="%.2f"),
+            "Sorpresa": st.column_config.NumberColumn(format="percent"), "Reacción": st.column_config.NumberColumn(format="percent"),
+        })
+        st.caption("Si alguna de tus empresas tiene tesis, apunta lo que pasó en su **registro de novedades** "
+                   "(Analizar empresa → pestaña *📌 Mi tesis*).")
+    else:
+        st.caption("Sin presentaciones en los últimos 4 meses (o Yahoo no tiene sus previsiones, algo habitual fuera de EE. UU.).")
