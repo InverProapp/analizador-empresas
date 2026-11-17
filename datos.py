@@ -732,10 +732,31 @@ def eventos(ticker: str) -> dict:
     if yf is None:
         return out
     t = yf.Ticker(ticker)
+    out["errores"] = []
     try:
         cal = t.calendar or {}
-    except Exception:
+        if not isinstance(cal, dict):
+            cal = {}
+    except Exception as ex:
+        out["errores"].append(f"calendar: {ex}")
         cal = {}
+    if not cal.get("Earnings Date") or cal.get("Ex-Dividend Date") is None:
+        # Plan B: las mismas fechas vienen en .info (segundos desde 1970)
+        try:
+            info = t.info or {}
+        except Exception as ex:
+            out["errores"].append(f"info: {ex}")
+            info = {}
+        seg = lambda k: pd.Timestamp(info[k], unit="s") if num(info.get(k)) else None  # noqa: E731
+        if not cal.get("Earnings Date"):
+            fe = [x for x in (seg("earningsTimestampStart"), seg("earningsTimestampEnd")) if x is not None] or \
+                 [x for x in (seg("earningsTimestamp"),) if x is not None]
+            if fe:
+                cal["Earnings Date"] = fe
+        if cal.get("Ex-Dividend Date") is None and seg("exDividendDate") is not None:
+            cal["Ex-Dividend Date"] = seg("exDividendDate")
+        if cal.get("Dividend Date") is None and seg("dividendDate") is not None:
+            cal["Dividend Date"] = seg("dividendDate")
 
     def _fecha(x):
         try:
@@ -762,7 +783,8 @@ def eventos(ticker: str) -> dict:
                                                      "Revenue Average", "Revenue Low", "Revenue High")}
     try:
         ed = t.get_earnings_dates(limit=16)
-    except Exception:
+    except Exception as ex:
+        out["errores"].append(f"earnings_dates: {ex}")
         ed = None
     if ed is not None and not ed.empty:
         ed = ed.copy()

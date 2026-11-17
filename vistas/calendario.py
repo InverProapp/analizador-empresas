@@ -41,7 +41,7 @@ if not universo:
     st.info("Todavía no sigues ninguna empresa. Añade favoritos (☆ en **Analizar empresa**) o escribe tickers arriba; "
             "mientras, aquí tienes las decisiones de los bancos centrales.")
 
-eventos, historicos = [], {}
+eventos, historicos, sin_eventos = [], {}, []
 if universo:
     barra = st.progress(0.0, text="Buscando eventos…")
     for k, tk in enumerate(universo):
@@ -49,6 +49,8 @@ if universo:
         for x in ev["proximos"]:
             eventos.append(dict(x, ticker=tk, empresa=nombres.get(tk, ""), consenso=ev.get("consenso", {})))
         historicos[tk] = ev.get("resultados")
+        if not ev["proximos"]:
+            sin_eventos.append(tk + (f" ({'; '.join(ev.get('errores', []))[:200]})" if ev.get("errores") else ""))
         barra.progress((k + 1) / len(universo), text=f"Buscando eventos de {tk}…")
     barra.empty()
 for x in d.get("eventos", []):
@@ -124,6 +126,8 @@ if proximos:
                        width="stretch", help="Descarga un archivo .ics que puedes abrir con Google Calendar, Outlook o el calendario del móvil")
 else:
     st.caption("No hay eventos en este periodo.")
+if sin_eventos:
+    st.caption(f"Yahoo no tiene próximos eventos anunciados para: {', '.join(sin_eventos)}.")
 
 # Archivo: lo que pasó ---------------------------------------------------------
 st.subheader("🗂️ Qué pasó en los últimos resultados")
