@@ -849,3 +849,27 @@ def eventos(ticker: str) -> dict:
             out["consenso"]["Earnings Average"] = num(futuras.sort_index()["esperado"].iloc[0])
         out["resultados"] = ed[ed["real"].notna()]
     return out
+
+
+
+# Velas intradía que ofrece Yahoo y cuántos días hacia atrás llega cada una
+INTRADIA = {"1 min": ("1m", 7), "5 min": ("5m", 59), "15 min": ("15m", 59), "30 min": ("30m", 59),
+            "1 hora": ("60m", 729), "4 horas": ("60m", 729)}
+
+
+def precios_intradia(ticker: str, intervalo: str, dias: int) -> pd.DataFrame:
+    """Velas intradía (hora local de la bolsa). intervalo: clave de INTRADIA."""
+    if yf is None or intervalo not in INTRADIA:
+        return pd.DataFrame()
+    cod, maximo = INTRADIA[intervalo]
+    dias = max(1, min(int(dias), maximo))
+    h = yf.Ticker(ticker).history(period=f"{dias}d", interval=cod, auto_adjust=False, prepost=False)
+    if h is None or h.empty:
+        return pd.DataFrame()
+    if h.index.tz is not None:
+        h.index = h.index.tz_localize(None)
+    h = h[[c for c in ("Open", "High", "Low", "Close", "Volume") if c in h]].dropna(subset=["Close"])
+    if intervalo == "4 horas":
+        h = h.resample("4h", origin="start_day", offset="0h").agg(
+            {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna(subset=["Close"])
+    return h

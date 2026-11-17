@@ -581,3 +581,81 @@ PREGUNTAS = [
      ["Para comprar más barato", "Para limitar la pérdida si el precio va en tu contra", "Para cobrar dividendos", "Para evitar comisiones"], 1,
      "Vende automáticamente al llegar a un precio. Ojo: en un hueco (gap) puede ejecutarse peor de lo previsto."),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Temporalidades: el mismo precio visto con velas de 5 min, 1 hora, 1 día y 1 semana
+# ---------------------------------------------------------------------------
+def serie_minutos(sesiones: int = 260, semilla: int = 51) -> pd.DataFrame:
+    rng = np.random.default_rng(semilla)
+    dias = pd.bdate_range(end="2026-11-13", periods=sesiones)
+    minutos = pd.timedelta_range("9h", "17h29min", freq="1min")
+    idx = pd.DatetimeIndex([d + m for d in dias for m in minutos])
+    # tendencia lenta + ciclos de semanas + ruido de minutos
+    n = len(idx)
+    tend = np.linspace(0, 0.35, n) + 0.08 * np.sin(np.linspace(0, 9 * np.pi, n))
+    ruido = np.cumsum(rng.normal(0, 0.0009, n))
+    c = 40 * np.exp(tend + ruido - np.linspace(0, ruido[-1] * 0.6, n))
+    o = np.r_[c[0], c[:-1]]
+    return pd.DataFrame({"Open": o, "High": np.maximum(o, c) * (1 + rng.uniform(0, 0.0006, n)),
+                         "Low": np.minimum(o, c) * (1 - rng.uniform(0, 0.0006, n)), "Close": c,
+                         "Volume": rng.uniform(200, 3000, n)}, index=idx)
+
+
+def _agrega(m: pd.DataFrame, regla: str) -> pd.DataFrame:
+    return m.resample(regla).agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna()
+
+
+def ej_temporalidades() -> list[tuple[str, str, go.Figure]]:
+    m = serie_minutos()
+    ult = m.index[-1].normalize()
+    tramos = [
+        ("Semanal · último año", "Cada vela = 1 semana. Se ve la tendencia de fondo: es lo que mira un inversor.",
+         _agrega(m, "W-FRI"), ult - pd.DateOffset(years=1), ult - pd.DateOffset(months=3)),
+        ("Diario · últimos 3 meses", "Cada vela = 1 día. El zoom del recuadro anterior: estructura de swing (días-semanas).",
+         _agrega(m, "1D"), ult - pd.DateOffset(months=3), ult - pd.Timedelta(days=6)),
+        ("1 hora · última semana", "Cada vela = 1 hora. El último tramo del diario: oscilaciones dentro de la semana.",
+         _agrega(m, "60min"), ult - pd.Timedelta(days=6), ult),
+        ("5 minutos · último día", "Cada vela = 5 minutos. Una sola sesión: mucho detalle y mucho ruido (scalping e intradía).",
+         _agrega(m, "5min"), ult, ult + pd.Timedelta(days=1)),
+    ]
+    out = []
+    for i, (titulo, texto, d, desde, zoom) in enumerate(tramos):
+        v = d[d.index >= desde]
+        fig = go.Figure(go.Candlestick(x=v.index, open=v["Open"], high=v["High"], low=v["Low"], close=v["Close"],
+                                       increasing_line_color=VERDE, decreasing_line_color=ROJO, showlegend=False))
+        if i < 3:
+            fig.add_vrect(x0=zoom, x1=v.index[-1] + pd.Timedelta(hours=12), fillcolor="rgba(42,111,219,.12)", line_width=0,
+                          annotation_text="lo que se ve en el siguiente", annotation_position="top left",
+                          annotation_font=dict(size=10, color=AZUL))
+        rb = [dict(bounds=["sat", "mon"])]
+        if i >= 2:
+            rb.append(dict(pattern="hour", bounds=[17.5, 9]))
+        fig.update_xaxes(rangebreaks=rb, showgrid=False)
+        fig.update_layout(height=240, margin=dict(l=4, r=4, t=8, b=4), xaxis_rangeslider_visible=False,
+                          yaxis=dict(side="right"), plot_bgcolor="rgba(0,0,0,0)")
+        out.append((titulo, texto, fig))
+    return out
+
+
+TEMPORALIDADES = [
+    ("1 min · 5 min", "Scalping", "Segundos o minutos", "Muchas oportunidades al día; resultados inmediatos.",
+     "Muchísimo ruido, comisiones y spread pesan mucho, exige estar delante de la pantalla y decidir muy rápido."),
+    ("15 min · 30 min · 1 hora", "Intradía (day trading)", "Minutos u horas; se cierra todo antes del cierre",
+     "No asumes el riesgo de la noche (huecos de apertura).", "Sigue habiendo bastante ruido y requiere varias horas al día."),
+    ("4 horas · diario", "Swing trading", "De días a pocas semanas",
+     "Señales más fiables, compatible con un trabajo, stops más amplios pero menos operaciones.", "Riesgo de huecos entre sesiones y fines de semana."),
+    ("Diario · semanal", "Trading de posición", "Semanas o meses", "Sigue tendencias grandes; poco tiempo de pantalla.",
+     "Stops amplios (menos acciones por operación) y hay que aguantar correcciones."),
+    ("Semanal · mensual", "Inversión", "Meses o años", "El ruido casi desaparece y manda la empresa (lo que mide el veredicto).",
+     "Pocas señales técnicas y mucho tiempo para ver resultados."),
+]
+
+PREGUNTAS += [
+    ("Si cada vela del gráfico es de 5 minutos, una media móvil de 200 velas abarca aproximadamente…",
+     ["200 días", "Unas 2 sesiones de bolsa", "200 minutos", "Un año"], 1,
+     "200 × 5 min = 1.000 min ≈ 16-17 horas de mercado: unas dos sesiones. Las medias cambian de significado con la temporalidad."),
+    ("En el análisis de «arriba abajo», ¿qué temporalidad decide la dirección en la que operar?",
+     ["La más pequeña (por ejemplo 1 min)", "La mayor (por ejemplo semanal o diario)", "Da igual", "La de 1 hora siempre"], 1,
+     "La temporalidad mayor marca la tendencia de fondo; la menor solo se usa para afinar el momento de entrada."),
+]

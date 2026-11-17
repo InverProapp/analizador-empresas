@@ -14,10 +14,12 @@ CONFIG = {"scrollZoom": True, "displaylogo": False, "doubleClick": "reset",
           "modeBarButtonsToRemove": ["lasso2d", "select2d", "autoScale2d", "toggleSpikelines"],
           "toImageButtonOptions": {"format": "png", "scale": 2, "filename": "grafico"}}
 
-PERIODOS = {"1S": pd.DateOffset(weeks=1), "1M": pd.DateOffset(months=1), "3M": pd.DateOffset(months=3),
+PERIODOS = {"1D": "1d", "5D": "5d", "1M": pd.DateOffset(months=1), "3M": pd.DateOffset(months=3),
             "6M": pd.DateOffset(months=6), "Año": "ytd", "1A": pd.DateOffset(years=1), "3A": pd.DateOffset(years=3),
             "5A": pd.DateOffset(years=5), "10A": pd.DateOffset(years=10), "Máx": None}
 FECHAS = "📅 Fechas"
+VELAS = ["Auto", "1 min", "5 min", "15 min", "30 min", "1 hora", "4 horas", "1 día", "1 semana", "1 mes"]
+MINUTOS = {"1 min": 1, "5 min": 5, "15 min": 15, "30 min": 30, "1 hora": 60, "4 horas": 240}
 INDICES = {"IBEX 35": "^IBEX", "Euro Stoxx 50": "^STOXX50E", "S&P 500": "^GSPC", "Nasdaq 100": "^NDX", "DAX": "^GDAXI",
            "CAC 40": "^FCHI", "FTSE 100": "^FTSE", "MSCI World (ETF)": "URTH", "Oro": "GC=F", "Bitcoin": "BTC-USD"}
 COLORES_COMP = [AZUL, NARANJA, MORADO, "#16a085", "#c0392b", "#7f8c8d", "#2c3e50"]
@@ -48,6 +50,15 @@ def historico(ticker: str) -> pd.DataFrame:
     return h[cols].dropna(subset=["Close"])
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def intradia(ticker: str, intervalo: str, dias: int) -> pd.DataFrame:
+    """Velas intradía (5 min en caché: los precios de Yahoo llevan ~15 min de retraso)."""
+    try:
+        return datos.precios_intradia(ticker, intervalo, dias)
+    except Exception:
+        return pd.DataFrame()
+
+
 def remuestrear(h: pd.DataFrame, regla: str) -> pd.DataFrame:
     regla = {"W": "W-FRI", "M": "ME"}.get(regla, regla)
     agg = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
@@ -72,27 +83,36 @@ def _rango(h: pd.DataFrame, periodo: str, clave: str):
     off = PERIODOS.get(periodo)
     if off is None:
         return h.index[0], fin
+    if off in ("1d", "5d"):
+        n = 1 if off == "1d" else 5
+        return h.index[-n].normalize(), fin + pd.Timedelta(hours=23, minutes=59)
     if off == "ytd":
         return pd.Timestamp(f"{fin.year}-01-01"), fin
     return fin - off, fin
 
 
-def _estadisticas(diario: pd.DataFrame, mon: str):
+def _estadisticas(diario: pd.DataFrame, mon: str, intradia_: bool = False):
     """Fila compacta con lo esencial del tramo elegido."""
     c = diario["Close"]
     if len(c) < 2:
         return
     r = c.pct_change().dropna()
     var = c.iloc[-1] / c.iloc[0] - 1
+    fmt = "%d/%m %H:%M" if intradia_ else "%d/%m/%Y"
+    unidad = "vela" if intradia_ else "día"
     celdas = [("Variación en el periodo", f"{var * 100:+.2f}%".replace(".", ","), f"de {_n(c.iloc[0])} a {_n(c.iloc[-1])} {mon}",
                VERDE if var >= 0 else ROJO),
-              ("Máximo", _n(c.max()), f"el {c.idxmax():%d/%m/%Y}", None),
-              ("Mínimo", _n(c.min()), f"el {c.idxmin():%d/%m/%Y}", None),
-              ("Volatilidad anual", f"{r.std() * np.sqrt(252) * 100:.1f}%".replace(".", ",") if len(r) > 5 else "—",
-               "lo que se mueve de normal en un año", None)]
+              ("Máximo", _n(diario["High"].max() if "High" in diario else c.max()), f"el {(diario['High'] if 'High' in diario else c).idxmax():{fmt}}", None),
+              ("Mínimo", _n(diario["Low"].min() if "Low" in diario else c.min()), f"el {(diario['Low'] if 'Low' in diario else c).idxmin():{fmt}}", None)]
+    if intradia_:
+        vol = diario["Volume"].sum() if "Volume" in diario else None
+        celdas.append(("Volumen negociado", f"{vol:,.0f}".replace(",", ".") if vol else "—", "acciones en el periodo", None))
+    else:
+        celdas.append(("Volatilidad anual", f"{r.std() * np.sqrt(252) * 100:.1f}%".replace(".", ",") if len(r) > 5 else "—",
+                       "lo que se mueve de normal en un año", None))
     if len(r):
-        celdas += [("Mejor día", f"{r.max() * 100:+.1f}%".replace(".", ","), f"el {r.idxmax():%d/%m/%Y}", VERDE),
-                   ("Peor día", f"{r.min() * 100:+.1f}%".replace(".", ","), f"el {r.idxmin():%d/%m/%Y}", ROJO)]
+        celdas += [(f"Mejor {unidad}", f"{r.max() * 100:+.2f}%".replace(".", ","), f"el {r.idxmax():{fmt}}", VERDE),
+                   (f"Peor {unidad}", f"{r.min() * 100:+.2f}%".replace(".", ","), f"el {r.idxmin():{fmt}}", ROJO)]
     html = "".join(
         f"<div style='flex:1;min-width:120px'><div style='font-size:12px;color:#777'>{et}</div>"
         f"<div style='font-size:21px;font-weight:600;color:{col or 'inherit'}'>{val}</div>"
@@ -125,8 +145,10 @@ def grafico_precio(clave: str, ticker: str, mon: str = "", completo: bool = True
     if completo:
         c2, c3, _ = st.columns([1.2, 1.4, 3], vertical_alignment="bottom")
         tipo = c2.segmented_control("Dibujo", ["Velas", "Línea"], default="Velas", key=f"{clave}_tipo") or "Velas"
-        gran = c3.selectbox("Cada vela es", ["Auto", "1 día", "1 semana", "1 mes"], key=f"{clave}_gran",
-                            help="Auto: diaria hasta 1 año, semanal hasta 5 y mensual para más.")
+        gran = c3.selectbox("Cada vela es", VELAS, key=f"{clave}_gran",
+                            help="Temporalidad. Auto: 5 min para 1 día, 15 min para 5 días, diaria hasta 1 año, semanal hasta 5 "
+                                 "y mensual para más. Yahoo da velas de 1 min de los últimos 7 días, de 5-30 min de los últimos "
+                                 "60 días y de 1-4 horas de los últimos 2 años.")
     desde, hasta = _rango(h, periodo, clave)
     if completo:
         with st.expander("⚙️ Indicadores, paneles y comparar", expanded=False):
@@ -146,15 +168,38 @@ def grafico_precio(clave: str, ticker: str, mon: str = "", completo: bool = True
         comparar = comparar_def
 
     span = (hasta - desde).days
-    regla = {"1 día": "D", "1 semana": "W", "1 mes": "M"}.get(gran) or ("D" if span <= 400 else "W" if span <= 2000 else "M")
-    serie = h if regla == "D" else remuestrear(h, regla)
+    if gran == "Auto":
+        gran = "5 min" if periodo == "1D" else "15 min" if periodo == "5D" else gran
+    if gran in MINUTOS:
+        regla = gran
+    else:
+        regla = {"1 día": "D", "1 semana": "W", "1 mes": "M"}.get(gran) or ("D" if span <= 400 else "W" if span <= 2000 else "M")
+    intra = regla in MINUTOS
+    if intra:
+        maximo = datos.INTRADIA[regla][1]
+        if span > maximo:
+            desde = hasta - pd.Timedelta(days=maximo)
+            st.caption(f"ℹ️ Yahoo solo guarda velas de {regla} de los últimos {maximo} días: se muestra ese tramo.")
+        dias = min(maximo, max(span + 3, 5))
+        serie = intradia(ticker, regla, dias)
+        if serie.empty:
+            st.info(f"Yahoo no da velas de {regla} para esta empresa ahora mismo. Prueba con velas diarias.")
+            return desde, hasta
+        if periodo == "1D":  # la última sesión completa o en curso
+            desde = serie.index[-1].normalize()
+        elif periodo == "5D":
+            sesiones = sorted(set(serie.index.normalize()))
+            desde = sesiones[-5] if len(sesiones) >= 5 else sesiones[0]
+        hasta = serie.index[-1] + pd.Timedelta(minutes=1)
+    else:
+        serie = h if regla == "D" else remuestrear(h, regla)
     t = datos.tecnicos(serie)
     v = t[(t.index >= desde) & (t.index <= hasta)]
-    diario = h[(h.index >= desde) & (h.index <= hasta)]
+    diario = v if intra else h[(h.index >= desde) & (h.index <= hasta)]
     if len(v) < 2:
         st.info("Ese periodo no tiene suficientes datos: elige uno más largo.")
         return desde, hasta
-    _estadisticas(diario, mon)
+    _estadisticas(diario, mon, intra)
 
     # Comparación: todo en % desde el inicio del tramo --------------------------------
     if comparar:
@@ -168,17 +213,18 @@ def grafico_precio(clave: str, ticker: str, mon: str = "", completo: bool = True
             if not tk2:
                 st.caption(f"No encuentro «{nombre}».")
                 continue
-            h2 = historico(tk2)
+            h2 = intradia(tk2, regla, dias) if intra else historico(tk2)
             if h2.empty:
                 st.caption(f"Sin datos para «{nombre}».")
                 continue
-            s2 = (h2 if regla == "D" else remuestrear(h2, regla))["Close"]
+            s2 = (h2 if regla == "D" or intra else remuestrear(h2, regla))["Close"]
             s2 = s2[(s2.index >= desde) & (s2.index <= hasta)]
             if len(s2) < 2:
                 continue
             fig.add_scatter(x=s2.index, y=(s2 / s2.iloc[0] - 1) * 100, name=nombre if nombre in INDICES else f"{nombre} ({tk2})",
                             line=dict(color=COLORES_COMP[i % len(COLORES_COMP)], width=1.8), hovertemplate="%{y:+.1f}%")
         fig.add_hline(y=0, line=dict(color="#999", width=1, dash="dot"))
+        fig.update_xaxes(hoverformat="%d/%m/%Y %H:%M" if intra else "%d/%m/%Y")
         fig.update_layout(height=460 if completo else 320, margin=dict(l=8, r=8, t=10, b=8), yaxis_title="% desde el inicio",
                           yaxis_ticksuffix="%", legend=dict(orientation="h", y=1.06))
         mostrar(fig)
@@ -249,12 +295,20 @@ def grafico_precio(clave: str, ticker: str, mon: str = "", completo: bool = True
     else:
         fig.update_yaxes(range=[lo - pad, hi + pad], row=1, col=1)
     fig.update_yaxes(side="right", row=1, col=1)
-    if regla == "D" and span <= 400:
+    if intra:
+        horas = v.index.hour + v.index.minute / 60
+        fin_sesion = min(float(horas.max()) + MINUTOS[regla] / 60, 24)
+        rb = [dict(bounds=["sat", "mon"])]
+        if fin_sesion - float(horas.min()) < 23:
+            rb.append(dict(pattern="hour", bounds=[fin_sesion, float(horas.min())]))
+        fig.update_xaxes(rangebreaks=rb)
+    elif regla == "D" and span <= 400:
         fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"])])
+    fig.update_xaxes(hoverformat="%a %d/%m/%Y %H:%M" if intra else "%a %d/%m/%Y")
     fig.update_layout(height=(470 if completo else 300) + 120 * len(paneles), xaxis_rangeslider_visible=False,
                       margin=dict(l=8, r=8, t=10, b=8), showlegend=completo, legend=dict(orientation="h", y=1.04))
     mostrar(fig)
-    nombre_vela = {"D": "un día", "W": "una semana", "M": "un mes"}[regla]
+    nombre_vela = {"D": "un día", "W": "una semana", "M": "un mes"}.get(regla) or f"{regla}"
     st.caption(f"Cada {'vela' if completo and tipo == 'Velas' else 'punto'} es **{nombre_vela}**. Arrastra sobre el gráfico para "
                "ampliar una zona, usa la rueda del ratón para acercar y **doble clic** para volver."
                + (" Las medias usan el mismo intervalo (Media 50 = 50 velas)." if completo and capas else ""))

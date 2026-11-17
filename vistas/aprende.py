@@ -16,8 +16,15 @@ st.caption("Lo esencial para leer un gráfico: velas, figuras, volumen, tendenci
            "Cada concepto con un dibujo de ejemplo. Al final, practica con empresas reales y ponte a prueba.")
 
 CFG = {"displayModeBar": False}
-tabs = st.tabs(["🕯️ Velas", "📐 Figuras", "📊 Volumen", "📈 Tendencias y soportes", "🧭 Indicadores",
-                "🛡️ Gestión del riesgo", "🧾 Órdenes y conceptos", "🔍 Practica", "✅ Test"])
+NOMBRES = ["🕯️ Velas", "📐 Figuras", "📊 Volumen", "📈 Tendencias y soportes", "⏱️ Temporalidades", "🧭 Indicadores",
+           "🛡️ Gestión del riesgo", "🧾 Órdenes y conceptos", "🔍 Practica", "✅ Test"]
+_t = st.tabs(NOMBRES)
+T = dict(zip(NOMBRES, _t))
+
+
+@st.cache_resource(show_spinner=False)
+def _figs_temporalidades():
+    return ap.ej_temporalidades()
 
 
 def ficha(titulo: str, etiqueta: str, fig: go.Figure, filas: list[tuple[str, str]]):
@@ -29,7 +36,7 @@ def ficha(titulo: str, etiqueta: str, fig: go.Figure, filas: list[tuple[str, str
 
 
 # 1. Velas ---------------------------------------------------------------------------------
-with tabs[0]:
+with T["🕯️ Velas"]:
     conclusion("Cada vela resume una sesión (un día, una hora…): dónde abrió, dónde cerró y hasta dónde llegó. "
                "Una vela sola dice poco; **importa dónde aparece** (tras una subida, en un soporte…) y **qué pasa después**.")
     c1, c2 = st.columns([1.1, 1])
@@ -56,7 +63,7 @@ with tabs[0]:
                                                ("⚠️ Ojo:", trampa)])
 
 # 2. Figuras ---------------------------------------------------------------------------------
-with tabs[1]:
+with T["📐 Figuras"]:
     conclusion("Las figuras (chartismo) son formas que dibuja el precio durante semanas o meses. Las de **giro** avisan de que la "
                "tendencia puede cambiar; las de **continuación**, de una pausa antes de seguir. **Ninguna está completa hasta que "
                "rompe**, y el objetivo se calcula midiendo la altura de la propia figura.")
@@ -72,7 +79,7 @@ with tabs[1]:
                "empresa en el 🎯 Simulador.")
 
 # 3. Volumen -------------------------------------------------------------------------------------
-with tabs[2]:
+with T["📊 Volumen"]:
     conclusion("El volumen es **cuántas acciones cambian de manos**. Es la «fuerza» detrás de cada movimiento: un movimiento con "
                "mucho volumen tiene más participantes y suele ser más fiable que uno con poco.")
     casos = [("Volumen que confirma la tendencia", "conf",
@@ -99,7 +106,7 @@ with tabs[2]:
 """)
 
 # 4. Tendencias y soportes ----------------------------------------------------------------------
-with tabs[3]:
+with T["📈 Tendencias y soportes"]:
     conclusion("Lo primero es saber **hacia dónde va** el precio. «La tendencia es tu amiga»: es más fácil ganar a favor de ella. "
                "Los **soportes** y **resistencias** son las zonas donde el precio se ha frenado antes y es probable que vuelva a hacerlo.")
     st.plotly_chart(ap.ej_tendencias(), width="stretch", config=CFG)
@@ -127,8 +134,70 @@ with tabs[3]:
 - Mira primero el gráfico **semanal** para la tendencia de fondo y luego el **diario** para afinar la entrada.
 """)
 
+# 4b. Temporalidades -----------------------------------------------------------------------------------
+with T["⏱️ Temporalidades"]:
+    conclusion("La **temporalidad** es cuánto tiempo resume cada vela: 1 minuto, 5 minutos, 1 hora, 1 día, 1 semana… "
+               "**El mismo valor puede estar subiendo en el semanal y bajando en el de 5 minutos.** Elige la temporalidad "
+               "según cuánto tiempo vayas a mantener la operación y mira siempre primero la mayor.")
+    st.markdown("#### 🔭 El mismo precio, cuatro temporalidades")
+    st.caption("Cada gráfico es un zoom del recuadro azul del anterior (cotización inventada).")
+    figs = _figs_temporalidades()
+    cols = st.columns(2)
+    for k, (titulo, texto, fig) in enumerate(figs):
+        with cols[k % 2]:
+            with st.container(border=True):
+                st.markdown(f"**{titulo}**")
+                st.plotly_chart(fig, width="stretch", config=CFG)
+                st.caption(texto)
+    st.markdown("#### 🧑‍💻 Qué temporalidad usar según tu estilo")
+    st.dataframe(pd.DataFrame(ap.TEMPORALIDADES, columns=["Velas de", "Estilo", "Cuánto dura cada operación", "Ventajas", "Inconvenientes"]),
+                 hide_index=True, width="stretch")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("""
+#### 🔝 Análisis de arriba abajo (multi-temporalidad)
+1. **Temporalidad mayor** (p. ej. semanal): ¿cuál es la tendencia de fondo? Solo operas a favor de ella.
+2. **Temporalidad intermedia** (p. ej. diario): ¿dónde están los soportes y resistencias? ¿Hay alguna figura?
+3. **Temporalidad menor** (p. ej. 4 horas o 1 hora): el momento exacto de entrada y dónde va el stop.
+
+Regla práctica: cada temporalidad, unas **4-6 veces** la siguiente (semanal → diario → 4 horas; o 1 hora → 15 min → 5 min).
+""")
+        st.markdown("""
+#### 📉 Ruido y fiabilidad
+- Cuanto **más pequeña** la temporalidad, **más ruido**: más señales falsas y más cambios de dirección sin sentido.
+- Un patrón (martillo, doble suelo…) en **diario o semanal** pesa mucho más que el mismo en 5 minutos.
+- En temporalidades pequeñas, el **spread y las comisiones** son una parte grande de lo que puedes ganar en cada operación.
+""")
+    with c2:
+        st.markdown("""
+#### 🧮 Los indicadores cambian de significado
+| Indicador | En velas de 5 min | En velas diarias | En velas semanales |
+|---|---|---|---|
+| Media de 20 | ~1h 40min | ~1 mes | ~5 meses |
+| Media de 200 | ~2 sesiones | ~10 meses | ~4 años |
+| RSI 14 | ~1h 10min | ~3 semanas | ~3 meses |
+
+Una «media de 200» no es lo mismo en cada gráfico: mira siempre qué vela estás usando.
+""")
+        st.markdown("""
+#### 🕘 Las horas del día importan (gráficos intradía)
+- **Apertura** (primeros 30-60 min): mucho volumen y movimientos bruscos; los huecos de la noche se rellenan o se amplían.
+- **Mediodía**: menos volumen; muchas rupturas falsas.
+- **15:30 (hora española)**: abre Wall Street y vuelve el volumen a las bolsas europeas.
+- **Cierre**: fondos e índices ajustan posiciones; el último precio del día es el más vigilado.
+- Por eso el volumen intradía suele tener forma de **«U»**: alto al principio y al final.
+""")
+    st.info("🛠️ **Pruébalo**: en 🔎 Analizar empresa → 📉 Gráfico elige el periodo **1D** y *Cada vela es* **5 min**, o **5D** con "
+            "**15 min**. Yahoo da velas de 1 minuto de los últimos 7 días, de 5-30 minutos de los últimos 60 días y de 1-4 horas "
+            "de los últimos 2 años (con ~15 minutos de retraso).")
+    st.markdown("""
+#### 🛑 El stop depende de la temporalidad
+- En 5 minutos el precio se mueve céntimos; en semanal, euros. Un stop pensado para el diario es enorme en 5 minutos y uno de 5 minutos salta al momento en el diario.
+- Pon el stop según el **movimiento normal de esa temporalidad** (por ejemplo, debajo del último mínimo relevante de ese gráfico) y ajusta el número de acciones con la **calculadora de la pestaña 🛡️ Gestión del riesgo**: así arriesgas lo mismo en euros uses la temporalidad que uses.
+""")
+
 # 5. Indicadores -----------------------------------------------------------------------------------
-with tabs[4]:
+with T["🧭 Indicadores"]:
     conclusion("Los indicadores son cálculos sobre el precio y el volumen. **No predicen**: resumen lo que ya ha pasado. "
                "Funcionan mejor **combinados** (tendencia + momento + volumen) y confirmando lo que ya ves en el gráfico.")
     t = datos.tecnicos(ap.serie_ejemplo())
@@ -165,7 +234,7 @@ with tabs[4]:
     st.caption("Ejemplos sobre una cotización inventada. En **🔎 Analizar empresa → 📉 Gráfico** los ves sobre cualquier empresa real.")
 
 # 6. Gestión del riesgo ------------------------------------------------------------------------
-with tabs[5]:
+with T["🛡️ Gestión del riesgo"]:
     conclusion("Lo que más diferencia a quien sobrevive en bolsa **no es acertar más, sino perder poco cuando falla**. "
                "Decide antes de entrar cuánto arriesgas, dónde sales si te equivocas y dónde recoges beneficios.")
     st.markdown("#### 🧮 Calculadora de tamaño de posición")
@@ -227,7 +296,7 @@ with tabs[5]:
 """)
 
 # 7. Órdenes y conceptos --------------------------------------------------------------------------
-with tabs[6]:
+with T["🧾 Órdenes y conceptos"]:
     conclusion("Saber **qué tipo de orden** usar y **qué cuesta** operar evita sorpresas. Y si usas productos con apalancamiento, "
                "entiende bien que **multiplican tanto las ganancias como las pérdidas**.")
     st.markdown("#### Tipos de órdenes")
@@ -263,7 +332,7 @@ with tabs[6]:
     st.caption("Material educativo general: no es asesoramiento financiero ni una recomendación de ningún producto.")
 
 # 8. Practica --------------------------------------------------------------------------------------------
-with tabs[7]:
+with T["🔍 Practica"]:
     conclusion("Pon a prueba los patrones en una empresa real: la web busca velas típicas y días de volumen anormal en su histórico y "
                "mide **qué pasó después**. Verás que ningún patrón acierta siempre: por eso se confirman y se combinan.")
     tk = elegir_empresa("ap", etiqueta="Empresa", defecto=empresa_actual("Inditex"), en_linea=True)
@@ -312,7 +381,7 @@ with tabs[7]:
                 abrir_empresa(tk)
 
 # 9. Test -----------------------------------------------------------------------------------------------
-with tabs[8]:
+with T["✅ Test"]:
     conclusion(f"{len(ap.PREGUNTAS)} preguntas para comprobar lo que has aprendido. Responde todas y pulsa **Corregir**.")
     with st.form("test_trading"):
         respuestas = []
