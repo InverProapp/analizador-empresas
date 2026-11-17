@@ -70,7 +70,8 @@ def _descargar_completa(ticker: str) -> datos.Empresa:
     e = None
     for intento in range(2):
         e = datos.descargar(ticker)
-        if e.info and e.hist is not None and not e.hist.empty:
+        ficha_ok = len(e.info or {}) > 15 and any(e.info.get(k) for k in ("longName", "shortName", "currency"))
+        if ficha_ok and e.hist is not None and not e.hist.empty:
             return e
         time.sleep(1.5)
     raise _Incompleta(e)
