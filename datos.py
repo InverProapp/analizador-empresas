@@ -699,13 +699,15 @@ def competidores(e: Empresa, n: int = 6) -> list[str]:
                 vistos.append(s)
 
     clave = e.info.get("industryKey") or _slug(e.info.get("industry"))
+    errores.append(f"info: {e.info.get('industry')!r}/{e.info.get('industryKey')!r}/{e.info.get('country')!r}")
     if clave:
         try:
             top = yf.Industry(clave).top_companies
+            errores.append(f"industria {clave}: {0 if top is None else len(top)}")
             if top is not None and len(top):
                 add(top.index)
         except Exception as ex:
-            errores.append(f"industria: {ex}")
+            errores.append(f"industria {clave}: {ex}")
     if len(vistos) < n and e.info.get("industry"):
         try:
             from yfinance import EquityQuery as EQ
@@ -715,6 +717,7 @@ def competidores(e: Empresa, n: int = 6) -> list[str]:
             for region in [r for r in (pais, "us") if r]:
                 q = EQ("and", [EQ("eq", ["industry", e.info["industry"]]), EQ("eq", ["region", region])])
                 r = yf.screen(q, sortField="intradaymarketcap", sortAsc=False, size=max(n, 10))
+                errores.append(f"búsqueda {region}: {len((r or {}).get('quotes', []))}")
                 add(x.get("symbol") for x in (r or {}).get("quotes", []))
                 if len(vistos) >= n:
                     break
@@ -725,6 +728,7 @@ def competidores(e: Empresa, n: int = 6) -> list[str]:
         if sk:
             try:
                 top = yf.Sector(sk).top_companies
+                errores.append(f"sector {sk}: {0 if top is None else len(top)}")
                 if top is not None and len(top):
                     add(top.index)
             except Exception as ex:
