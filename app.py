@@ -32,6 +32,7 @@ paginas = {
         st.Page("vistas/favoritos.py", title="Mi lista y alertas", icon="⭐"),
         st.Page("vistas/calendario.py", title="Calendario", icon="📅"),
     ],
+    "Aprender": [st.Page("vistas/aprende.py", title="Aprende trading", icon="📚")],
     "Herramientas": [
         st.Page("vistas/simulador.py", title="Simulador", icon="🎯"),
         st.Page("vistas/backtest.py", title="Backtest del modelo", icon="🧪"),
