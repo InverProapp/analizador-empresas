@@ -82,12 +82,31 @@ def _cargar(ticker: str) -> datos.Empresa:
     return _descargar_completa(ticker)
 
 
+_INCOMPLETAS: dict = {}  # ticker -> (hora, empresa): lo que Yahoo dio a medias, se reutiliza solo 5 min
+
+
+def _incompleta_reciente(ticker):
+    import time
+    x = _INCOMPLETAS.get(ticker)
+    return x[1] if x and time.time() - x[0] < 300 else None
+
+
+def _guardar_incompleta(ticker, e):
+    import time
+    _INCOMPLETAS[ticker] = (time.time(), e)
+    return e
+
+
 def cargar(ticker: str) -> datos.Empresa:
-    """Empresa completa (1 h en caché, compartida). Si Yahoo la da a medias, se usa sin guardarla para reintentar luego."""
+    """Empresa completa (1 h en caché, compartida). Si Yahoo la da a medias (límite de peticiones), se usa
+    durante 5 minutos sin guardarla en la caché larga, para volver a intentarlo después."""
+    rec = _incompleta_reciente(ticker)
+    if rec is not None:
+        return rec
     try:
         return _cargar(ticker)
     except _Incompleta as ex:
-        return ex.empresa
+        return _guardar_incompleta(ticker, ex.empresa)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -104,13 +123,15 @@ def _cargar_opcional(ticker: str):
 def cargar_opcional(ticker: str):
     """Como cargar(), pero devuelve None en vez de fallar (para escáner y backtest).
     Se guarda 12 h y es compartido entre todos los usuarios de la web; lo incompleto no se guarda."""
-    try:
-        return _cargar_opcional(ticker)
-    except _Incompleta as ex:
-        e = ex.empresa
-        return e if e is not None and e.hist is not None and not e.hist.empty else None
-    except Exception:
-        return None
+    e = _incompleta_reciente(ticker)
+    if e is None:
+        try:
+            return _cargar_opcional(ticker)
+        except _Incompleta as ex:
+            e = _guardar_incompleta(ticker, ex.empresa)
+        except Exception:
+            return None
+    return e if e is not None and e.hist is not None and not e.hist.empty else None
 
 
 @st.cache_data(ttl=24 * 3600, show_spinner=False)

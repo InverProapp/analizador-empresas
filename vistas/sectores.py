@@ -48,8 +48,11 @@ if modo == "A partir de una empresa":
         if len(lista) < 3:
             st.error("Yahoo no da competidores para esta empresa. Prueba con el otro modo.")
             _e = cargar(base)
-            st.caption(f"Detalle técnico: ficha con {len(_e.info or {})} campos (industria: {_e.info.get('industry')!r}). "
-                       f"{datos.ULTIMO_ERROR_COMPETIDORES[:250]} {'; '.join(_e.errores)[:150]}")
+            if len(_e.info or {}) <= 15:
+                st.info("Yahoo Finance no está devolviendo ahora mismo la ficha de la empresa (suele ser un límite temporal "
+                        "de peticiones). Vuelve a probar en unos minutos.")
+            elif datos.ULTIMO_ERROR_COMPETIDORES:
+                st.caption("Detalle técnico: " + datos.ULTIMO_ERROR_COMPETIDORES[:300])
             st.stop()
         cargadas = cargar_varias(lista, "Analizando")
         filas = []
