@@ -674,20 +674,63 @@ def historico_multiples(e: Empresa) -> pd.DataFrame:
     return out.astype(float)
 
 
+ULTIMO_ERROR_COMPETIDORES = ""
+
+
+def _slug(texto: str) -> str:
+    import re
+    return re.sub(r"[^a-z0-9]+", "-", (texto or "").lower().replace("&", "")).strip("-")
+
+
 def competidores(e: Empresa, n: int = 6) -> list[str]:
-    """Empresas grandes de la misma industria según Yahoo (sesgo hacia EE. UU.)."""
-    clave = e.info.get("industryKey")
-    if yf is None or not clave:
+    """Empresas grandes de la misma industria. Prueba varias fuentes de Yahoo, de más a menos precisa:
+    1) top de la industria, 2) búsqueda por industria en el país de la empresa y en EE. UU., 3) top del sector."""
+    global ULTIMO_ERROR_COMPETIDORES
+    errores = []
+    if yf is None:
         return []
-    try:
-        top = yf.Industry(clave).top_companies
-    except Exception:
-        return []
-    if top is None or len(top) == 0:
-        return []
-    simbolos = [str(s) for s in list(top.index)]
     base = e.ticker.split(".")[0]
-    return [s for s in simbolos if s != e.ticker and s.split(".")[0] != base][:n]
+    vistos: list[str] = []
+
+    def add(simbolos):
+        for s in simbolos:
+            s = str(s)
+            if s and s != e.ticker and s.split(".")[0] != base and s not in vistos:
+                vistos.append(s)
+
+    clave = e.info.get("industryKey") or _slug(e.info.get("industry"))
+    if clave:
+        try:
+            top = yf.Industry(clave).top_companies
+            if top is not None and len(top):
+                add(top.index)
+        except Exception as ex:
+            errores.append(f"industria: {ex}")
+    if len(vistos) < n and e.info.get("industry"):
+        try:
+            from yfinance import EquityQuery as EQ
+            pais = {"Spain": "es", "France": "fr", "Germany": "de", "Italy": "it", "United Kingdom": "gb", "Netherlands": "nl",
+                    "Portugal": "pt", "Switzerland": "ch", "Brazil": "br", "Mexico": "mx", "Japan": "jp", "Canada": "ca"}.get(
+                        e.info.get("country", ""), None)
+            for region in [r for r in (pais, "us") if r]:
+                q = EQ("and", [EQ("eq", ["industry", e.info["industry"]]), EQ("eq", ["region", region])])
+                r = yf.screen(q, sortField="intradaymarketcap", sortAsc=False, size=max(n, 10))
+                add(x.get("symbol") for x in (r or {}).get("quotes", []))
+                if len(vistos) >= n:
+                    break
+        except Exception as ex:
+            errores.append(f"búsqueda: {ex}")
+    if len(vistos) < 3:
+        sk = e.info.get("sectorKey") or _slug(e.info.get("sector"))
+        if sk:
+            try:
+                top = yf.Sector(sk).top_companies
+                if top is not None and len(top):
+                    add(top.index)
+            except Exception as ex:
+                errores.append(f"sector: {ex}")
+    ULTIMO_ERROR_COMPETIDORES = "; ".join(errores)
+    return vistos[:n]
 
 
 def noticias(ticker: str, n: int = 12) -> list[dict]:

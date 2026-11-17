@@ -19,9 +19,16 @@ st.caption("Compara a todas las empresas de un sector: quién vende más, quién
 
 
 @st.cache_data(ttl=12 * 3600, show_spinner=False)
+def _rivales(ticker: str, n: int) -> list[str]:
+    r = datos.competidores(cargar(ticker), n=n)
+    if not r:
+        raise RuntimeError("sin competidores")  # no se guarda en caché: se reintenta la próxima vez
+    return r
+
+
 def rivales(ticker: str, n: int = 14) -> list[str]:
     try:
-        return datos.competidores(cargar(ticker), n=n)
+        return _rivales(ticker, n)
     except Exception:
         return []
 
@@ -39,6 +46,8 @@ if modo == "A partir de una empresa":
             lista = [base] + rivales(base, n)
         if len(lista) < 3:
             st.error("Yahoo no da competidores para esta empresa. Prueba con el otro modo.")
+            if datos.ULTIMO_ERROR_COMPETIDORES:
+                st.caption(f"Detalle técnico: {datos.ULTIMO_ERROR_COMPETIDORES[:300]}")
             st.stop()
         cargadas = cargar_varias(lista, "Analizando")
         filas = []
