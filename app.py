@@ -2,9 +2,29 @@
 
 Arranque:  streamlit run app.py
 """
+import importlib
+import os
+import sys
+
 import streamlit as st
 
-import usuario
+# Tras publicar cambios, Streamlit Cloud a veces conserva en memoria la versión anterior de nuestros módulos
+# (y aparecen errores tipo «no tiene el atributo…»). Recargamos cualquier módulo propio cuyo archivo haya cambiado.
+_RAIZ = os.path.dirname(os.path.abspath(__file__))
+for _nombre, _mod in list(sys.modules.items()) if not os.environ.get("ANALIZADOR_SIN_RECARGA") else []:
+    _f = getattr(_mod, "__file__", None) or ""
+    if not _f.startswith(_RAIZ) or os.sep + "vistas" + os.sep in _f or _nombre in ("__main__", "usuario"):
+        continue
+    try:
+        _mt = os.path.getmtime(_f)
+        if getattr(_mod, "_mtime_carga", None) != _mt:
+            if getattr(_mod, "_mtime_carga", None) is not None or _nombre != "app":
+                importlib.reload(_mod)
+            _mod._mtime_carga = _mt
+    except Exception:
+        pass
+
+import usuario  # noqa: E402
 
 st.set_page_config(page_title="Analizador de empresas", page_icon="📊", layout="wide")
 usuario.montar()  # favoritos, alertas y notas guardados en este navegador

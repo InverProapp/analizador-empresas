@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-import aprende as ap
+import lecciones as ap
 import datos
 import graficos
 from comun import abrir_empresa, cargar, conclusion, elegir_empresa, empresa_actual, f_num, f_pct
