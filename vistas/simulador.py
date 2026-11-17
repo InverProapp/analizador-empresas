@@ -43,7 +43,7 @@ aj = ajustes()
 
 if not ticker:
     st.title("Simulador de operaciones")
-    st.write("Busca una empresa en la barra lateral para empezar.")
+    st.write("Escribe arriba el nombre de una empresa para empezar.")
     st.stop()
 
 with st.spinner(f"Descargando {ticker}…"):

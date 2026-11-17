@@ -140,7 +140,7 @@ def tickers_mercado(nombre: str, n: int) -> list[str]:
     return universos.mercado(nombre, n)
 
 
-def selector_universo(prefijo: str, defecto_lista: str = "ITX.MC, SAN.MC, AAPL, MSFT, MC.PA"):
+def selector_universo(prefijo: str, defecto_lista: str = "Inditex, Santander, Apple, Microsoft, LVMH"):
     """Selector de empresas: índice, mercado entero de un país o lista propia.
     Devuelve (etiqueta, lista de tickers)."""
     import universos
@@ -161,8 +161,11 @@ def selector_universo(prefijo: str, defecto_lista: str = "ITX.MC, SAN.MC, AAPL, 
             st.error(f"Yahoo no devolvió la lista de empresas ({type(ex).__name__}). Prueba en un momento.")
             tks = []
         return f"{nombre} · top {len(tks)}", tks
-    texto = st.text_area("Tickers (separados por comas)", value=defecto_lista, key=f"{prefijo}_lista")
-    return "Lista personalizada", universos.lista("Lista personalizada", texto)
+    texto = st.text_area("Empresas (nombres o tickers, separados por comas)", value=defecto_lista, key=f"{prefijo}_lista",
+                         help="Por ejemplo: Inditex, Santander, Apple, Microsoft")
+    tks, traducidos, faltan = resolver_lista(texto)
+    explicar_lista(traducidos, faltan)
+    return "Lista personalizada", tks
 
 
 def tiempo_estimado(n: int) -> str:
@@ -312,37 +315,101 @@ def secreto(nombre: str):
 
 
 
+def parece_ticker(texto: str) -> bool:
+    """«ITX.MC», «AAPL», «^IBEX» parecen tickers; «Inditex» o «banco santander» son nombres."""
+    t = (texto or "").strip()
+    if not t or " " in t:
+        return False
+    if any(c in t for c in ".^=-") or any(c.isdigit() for c in t):
+        return True
+    return t.isupper() and len(t) <= 5
+
+
+def resolver(texto: str) -> tuple[str | None, str]:
+    """Convierte un nombre o ticker en (ticker, nombre). Si es un nombre, toma el mejor resultado de la búsqueda."""
+    t = (texto or "").strip()
+    if not t:
+        return None, ""
+    if parece_ticker(t):
+        return t.upper(), ""
+    res = buscar(t, 4)
+    return (res[0]["symbol"], res[0]["nombre"]) if res else (None, "")
+
+
+def resolver_lista(texto: str) -> tuple[list[str], list[str], list[str]]:
+    """«Inditex, Apple, SAN.MC» → (tickers, ['Inditex → ITX.MC', …], [no encontrados])."""
+    tickers, traducidos, faltan = [], [], []
+    for parte in [x.strip() for x in (texto or "").replace(";", ",").replace("\n", ",").split(",") if x.strip()]:
+        tk, nombre = resolver(parte)
+        if not tk:
+            faltan.append(parte)
+            continue
+        if tk not in tickers:
+            tickers.append(tk)
+        if not parece_ticker(parte):
+            traducidos.append(f"{parte} → {tk}")
+    return tickers, traducidos, faltan
+
+
+def explicar_lista(traducidos: list[str], faltan: list[str], donde=st):
+    if traducidos:
+        donde.caption("Entendido: " + " · ".join(traducidos))
+    if faltan:
+        donde.warning("No encuentro: " + ", ".join(faltan) + ". Prueba con otro nombre o con su ticker.")
+
+
+def empresa_actual(defecto: str = "ITX.MC") -> str:
+    """La última empresa que se ha mirado en cualquier sección."""
+    return st.session_state.get("_ultima_empresa") or defecto
+
+
+def elegir_empresa(clave: str, donde=st, etiqueta: str = "Empresa", defecto: str = "Inditex", en_linea: bool = False) -> str | None:
+    """Buscador por nombre (o ticker, si te lo sabes). Si hay varias coincidencias, deja elegir cuál.
+    en_linea: el buscador y la lista de coincidencias, uno al lado del otro."""
+    if en_linea:
+        c1, c2 = donde.columns([1, 1.3], vertical_alignment="top")
+        donde, donde2 = c1, c2
+    else:
+        donde2 = donde
+    q = _persistente(donde.text_input, etiqueta, f"{clave}_q", defecto,
+                     placeholder="Escribe el nombre: Inditex, Apple, Santander…",
+                     help="Escribe el nombre de la empresa (no hace falta saber el ticker). Si sabes el ticker, también vale.")
+    if not q or not q.strip():
+        return None
+    resultados = buscar(q.strip(), 4)
+    opciones = {f"{r['nombre']} · {r['symbol']} ({r['bolsa']})": r["symbol"] for r in resultados}
+    if parece_ticker(q) and q.strip().upper() not in opciones.values():
+        opciones = {f"{q.strip().upper()} (ticker escrito)": q.strip().upper(), **opciones}
+    elif parece_ticker(q):  # el ticker exacto, primero
+        opciones = dict(sorted(opciones.items(), key=lambda kv: kv[1] != q.strip().upper()))
+    if not opciones:
+        donde2.warning("No encuentro esa empresa. Prueba con otro nombre (por ejemplo, el nombre comercial) o con su ticker.")
+        return None
+    etiquetas = list(opciones)
+    if len(etiquetas) == 1:
+        donde2.caption(f"✔️ {etiquetas[0]}")
+        return opciones[etiquetas[0]]
+    if st.session_state.get(f"_guardado_{clave}_sel") not in etiquetas:
+        st.session_state[f"_guardado_{clave}_sel"] = etiquetas[0]
+    elegida = _persistente(donde2.selectbox, "¿Cuál de ellas?", f"{clave}_sel", etiquetas[0], options=etiquetas,
+                           help="La misma empresa puede cotizar en varias bolsas: la primera suele ser la principal.")
+    return opciones[elegida]
+
+
 def selector_empresa(titulo: str = "🔎 Buscar empresa"):
-    """Buscador de empresa en la barra lateral. La empresa elegida se mantiene al cambiar de sección."""
-    st.sidebar.markdown(f"### {titulo}")
-    modo = _persistente(st.sidebar.radio, "Buscar por", "modo_busqueda", "Nombre", options=["Nombre", "Ticker"],
-                        horizontal=True)
-    if modo == "Nombre":
-        q = _persistente(st.sidebar.text_input, "Empresa", "texto_busqueda", "Inditex",
-                         help="Escribe el nombre y elige el ticker de la bolsa que quieras.")
-        resultados = buscar(q, 4) if q else []
-        if not resultados:
-            if q:
-                st.sidebar.info("Sin resultados. Prueba con el ticker directamente.")
-            return None
-        opciones = {f"{r['symbol']} · {r['nombre']} ({r['bolsa']})": r["symbol"] for r in resultados}
-        etiquetas = list(opciones)
-        guardada = st.session_state.get("_guardado_resultado")
-        if guardada not in etiquetas:
-            st.session_state["_guardado_resultado"] = etiquetas[0]
-        elegida = _persistente(st.sidebar.selectbox, "Resultados", "resultado", etiquetas[0], options=etiquetas)
-        return opciones[elegida]
-    tk = _persistente(st.sidebar.text_input, "Ticker de Yahoo Finance", "ticker_directo", "ITX.MC",
-                      help="Ejemplos: AAPL, MSFT, SAN.MC, ITX.MC, MC.PA, SAP.DE, 7203.T, NESN.SW")
-    return tk.strip().upper() or None
+    """Buscador de empresa arriba de la página (se ve también en el móvil). La empresa se mantiene al cambiar de sección."""
+    tk = elegir_empresa("busqueda", st, etiqueta="🔎 Busca una empresa por su nombre", en_linea=True)
+    if tk:
+        st.session_state["_ultima_empresa"] = tk
+    return tk
 
 
 def abrir_empresa(tk: str, pagina: str = "vistas/empresa.py"):
     """Abre una empresa concreta en otra sección (desde el escáner, por ejemplo)."""
-    st.session_state["_guardado_modo_busqueda"] = "Ticker"
-    st.session_state["_guardado_ticker_directo"] = tk
+    st.session_state["_guardado_busqueda_q"] = tk
+    st.session_state.pop("_guardado_busqueda_sel", None)
+    st.session_state["_ultima_empresa"] = tk
     st.switch_page(pagina)
-
 
 
 @st.cache_data(ttl=12 * 3600, show_spinner=False)

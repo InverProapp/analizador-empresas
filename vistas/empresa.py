@@ -23,7 +23,7 @@ margen_seg, wacc, g_term = aj["margen_seg"], aj["wacc"], aj["g_term"]
 # ---------------------------------------------------------------------------
 if not ticker:
     st.title("🔎 Analizar empresa")
-    st.write("Escribe el nombre o el ticker de una empresa en la barra lateral (a la izquierda) para empezar.")
+    st.write("Escribe arriba el nombre de una empresa para empezar (por ejemplo: Inditex, Apple, Santander).")
     st.stop()
 
 with st.spinner(f"Descargando {ticker}…"):
@@ -656,9 +656,13 @@ with T_COMP:
         st.caption("Sugeridos: las mayores empresas de su industria según Yahoo (suele tirar hacia EE. UU.). "
                    "Añade o quita los que quieras, por ejemplo competidores europeos.")
     else:
-        st.caption("Yahoo no sugiere competidores para esta empresa: escríbelos tú.")
-    lista_peers = st.text_input("Competidores (tickers separados por comas)", value=", ".join(sugeridos), key=f"peers_{ticker}")
-    peers = [x.strip().upper() for x in lista_peers.split(",") if x.strip() and x.strip().upper() != ticker][:12]
+        st.caption("Yahoo no sugiere competidores para esta empresa: escribe sus nombres.")
+    lista_peers = st.text_input("Competidores (nombres o tickers, separados por comas)", value=", ".join(sugeridos), key=f"peers_{ticker}",
+                                help="Por ejemplo: H&M, Primark, Gap. No hace falta saber el ticker.")
+    from comun import explicar_lista, resolver_lista
+    peers, _trad, _faltan = resolver_lista(lista_peers)
+    explicar_lista(_trad, _faltan)
+    peers = [x for x in peers if x != ticker][:12]
     clave = f"comp_{ticker}_{','.join(peers)}"
     if st.button("🆚 Comparar", type="primary", disabled=not peers):
         cargadas = cargar_varias(peers, "Descargando competidores")

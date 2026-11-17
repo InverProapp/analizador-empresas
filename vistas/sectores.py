@@ -9,7 +9,7 @@ import streamlit as st
 import datos
 import scoring as sc
 from comun import (COLOR, GRIS, abrir_empresa, ajustes, analizar, cargar, cargar_varias, config_columnas, f_pct, fila_resumen,
-                   selector_universo, tiempo_estimado)
+                   selector_universo, tiempo_estimado, elegir_empresa, empresa_actual)
 
 aj = ajustes()
 st.title("🏭 Sectores")
@@ -39,11 +39,12 @@ with st.expander("1️⃣ Elige el sector" + (" · cargado" if res else ""), exp
                     key="sec_modo")
     base = None
     if modo == "A partir de una empresa":
-        c1, c2 = st.columns([2, 1], vertical_alignment="bottom")
-        base = c1.text_input("Ticker de la empresa", st.session_state.get("_guardado_ticker_directo") or "ITX.MC", key="sec_ticker").strip().upper()
+        c1, c2 = st.columns([2, 1], vertical_alignment="top")
+        with c1:
+            base = elegir_empresa("sec", etiqueta="Empresa", defecto=empresa_actual("Inditex"))
         n = c2.slider("Nº de competidores", 5, 20, 12, key="sec_n")
         st.caption("Usa las mayores empresas de su misma industria según Yahoo Finance (de todo el mundo, con más peso de EE. UU.).")
-        if st.button("🏭 Analizar sector", type="primary"):
+        if st.button("🏭 Analizar sector", type="primary", disabled=not base):
             with st.spinner("Buscando competidores…"):
                 lista = [base] + rivales(base, n)
             if len(lista) < 3:

@@ -8,7 +8,7 @@ import streamlit as st
 
 import aprende as ap
 import datos
-from comun import abrir_empresa, cargar, conclusion, f_num, f_pct
+from comun import abrir_empresa, cargar, conclusion, elegir_empresa, empresa_actual, f_num, f_pct
 
 st.title("📚 Aprende trading")
 st.caption("Lo esencial para leer un gráfico: velas, figuras, volumen, tendencias e indicadores, y cómo gestionar el riesgo. "
@@ -265,8 +265,9 @@ with tabs[6]:
 with tabs[7]:
     conclusion("Pon a prueba los patrones en una empresa real: la web busca velas típicas y días de volumen anormal en su histórico y "
                "mide **qué pasó después**. Verás que ningún patrón acierta siempre: por eso se confirman y se combinan.")
-    c1, c2 = st.columns([2, 1], vertical_alignment="bottom")
-    tk = c1.text_input("Ticker de la empresa", st.session_state.get("_guardado_ticker_directo") or "ITX.MC", key="ap_ticker").strip().upper()
+    c1, c2 = st.columns([2, 1], vertical_alignment="top")
+    with c1:
+        tk = elegir_empresa("ap", etiqueta="Empresa", defecto=empresa_actual("Inditex"))
     ver = c2.segmented_control("Ver los últimos", ["3M", "6M", "1A"], default="6M", key="ap_periodo") or "6M"
     if tk:
         try:
@@ -275,7 +276,7 @@ with tabs[7]:
         except Exception:
             h = None
         if h is None or h.empty:
-            st.warning("No hay histórico de precios para ese ticker.")
+            st.warning("Yahoo no tiene histórico de precios para esa empresa. Prueba con otra o elige otra bolsa en «¿Cuál de ellas?».")
         else:
             det = ap.detectar(h)
             if det.attrs.get("aviso"):
