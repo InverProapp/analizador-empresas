@@ -249,7 +249,12 @@ def _seccion_eventos(ticker: str, nombre: str, e, mon: str):
     else:
         st.caption("Yahoo no tiene eventos anunciados para los próximos 4 meses.")
     cs = ev.get("consenso") or {}
-    if cs.get("Earnings Average") is not None:
+    import previa
+    pv = previa.construir(ev, e.hist, e.hist["Close"].dropna().iloc[-1] if e.hist is not None and len(e.hist) else None)
+    if pv is not None and pv["dias"] <= 60:
+        with st.container(border=True):
+            previa.mostrar(pv, e.sector, ts.de(ticker) if us.cargado() else None, mon, ticker)
+    elif cs.get("Earnings Average") is not None:
         txt = f"Para la próxima presentación, los analistas esperan un **beneficio por acción de {f_num(cs['Earnings Average'])}**"
         if cs.get("Earnings Low") is not None and cs.get("Earnings High") is not None:
             txt += f" (entre {f_num(cs['Earnings Low'])} y {f_num(cs['Earnings High'])})"

@@ -7,7 +7,8 @@ import streamlit as st
 import agenda
 import tesis as ts
 import usuario as us
-from comun import abrir_empresa, buscar, eventos_empresa, precios_max
+import previa
+from comun import abrir_empresa, buscar, cargar_opcional, eventos_empresa, precios_max
 
 st.sidebar.title("📅 Calendario")
 st.title("📅 Calendario de eventos")
@@ -53,11 +54,12 @@ if not universo:
     st.info("Todavía no sigues ninguna empresa. Añade favoritos (☆ en **Analizar empresa**) o escribe tickers arriba; "
             "mientras, aquí tienes las decisiones de los bancos centrales.")
 
-eventos, historicos, sin_eventos = [], {}, []
+eventos, historicos, sin_eventos, evs = [], {}, [], {}
 if universo:
     barra = st.progress(0.0, text="Buscando eventos…")
     for k, tk in enumerate(universo):
         ev = eventos_empresa(tk)
+        evs[tk] = ev
         for x in ev["proximos"]:
             eventos.append(dict(x, ticker=tk, empresa=nombres.get(tk, ""), consenso=ev.get("consenso", {})))
         historicos[tk] = ev.get("resultados")
@@ -116,6 +118,22 @@ for col, (titulo, ini, fin_s) in zip(cols, semanas):
         if altos:
             st.caption("💡 Hay resultados de empresas en las que tienes tesis: repasa qué pilar pondrán a prueba "
                        "y decide antes qué harás si sorprenden para bien o para mal.")
+
+# Previas de resultados ---------------------------------------------------------
+proximas = sorted([(min(x["fecha"] for x in ev["proximos"] if x["tipo"] == "Resultados"), tk) for tk, ev in evs.items()
+                   if any(x["tipo"] == "Resultados" and hoy <= x["fecha"] <= hoy + pd.Timedelta(days=14) for x in ev["proximos"])])
+if proximas:
+    st.subheader(f"🔮 Previas de resultados ({len(proximas)})")
+    st.caption("Las empresas que presentan en las próximas dos semanas: qué se espera, qué vigilar, tres escenarios y tu plan.")
+    for f, tk in proximas:
+        with st.expander(f"{f:%d/%m} · {tk} {nombres.get(tk, '')} {posicion(tk)}"):
+            e_tk = cargar_opcional(tk)
+            hist = precios_max(tk)
+            precio = float(hist["Close"].dropna().iloc[-1]) if hist is not None and len(hist) else None
+            pv = previa.construir(evs[tk], hist, precio)
+            if pv:
+                previa.mostrar(pv, getattr(e_tk, "sector", None), tesis_d.get(tk),
+                               (e_tk.info.get("currency") if e_tk is not None else "") or "", tk)
 
 # Tabla completa ---------------------------------------------------------------
 st.subheader(f"Próximos eventos ({len(proximos)})")

@@ -209,8 +209,14 @@ def config_columnas():
     cfg = {p: st.column_config.ProgressColumn(p, min_value=0, max_value=100, format="%.0f") for p in ["Nota"] + sc.PILARES}
     for c in ("ROE", "Div.", "Potencial", "Margen op.", "Crec. ingresos", "vs zona compra"):
         cfg[c] = st.column_config.NumberColumn(c, format="percent")
-    for c in ("PER", "EV/EBITDA", "Deuda neta/EBITDA"):
+    for c in ("PER", "EV/EBITDA", "Deuda neta/EBITDA", "P/VC", "PER esperado", "Beta"):
         cfg[c] = st.column_config.NumberColumn(c, format="%.1f")
+    for c in ("ROIC", "Margen neto", "Crec. beneficio", "Crec. ventas 3-5a", "FCF yield", "Payout", "Desde máx. 52s",
+              "Rent. 3 meses", "Rent. 1 año", "Cuota de ventas"):
+        cfg[c] = st.column_config.NumberColumn(c, format="percent")
+    for c in ("Cap. (mill.)", "Ventas (mill.)"):
+        cfg[c] = st.column_config.NumberColumn(c, format="localized")
+    cfg["Piotroski"] = st.column_config.NumberColumn("Piotroski", format="%d")
     return cfg
 
 
@@ -224,7 +230,21 @@ def fila_resumen(tk, e, m, r) -> dict:
                  "Deuda neta/EBITDA": m.get("deuda_neta_ebitda"), "Div.": m.get("rent_dividendo"),
                  "Potencial": (r.valor_justo / precio - 1) if r.valor_justo and precio else None,
                  "vs zona compra": (precio / r.precio_compra - 1) if r.precio_compra and precio else None})
+    # Columnas extra (búsquedas de ideas y vista de sector; el escáner no las muestra por defecto)
+    mx = m.get("max_52s")
+    fila.update({"Moneda": e.info.get("currency"), "Industria": e.info.get("industry"),
+                 "Cap. (mill.)": (m.get("market_cap") or 0) / 1e6 or None,
+                 "Ventas (mill.)": (e.info.get("totalRevenue") or 0) / 1e6 or None,
+                 "ROIC": m.get("roic"), "Margen neto": m.get("margen_neto"), "Crec. beneficio": m.get("crec_beneficio"),
+                 "Crec. ventas 3-5a": m.get("cagr_ingresos"), "FCF yield": m.get("fcf_yield"), "P/VC": m.get("p_vc"),
+                 "PER esperado": m.get("per_fwd"), "Payout": m.get("payout"), "Piotroski": m.get("piotroski"),
+                 "Desde máx. 52s": (precio / mx - 1) if precio and mx else None, "Rent. 3 meses": m.get("rent_3m"),
+                 "Rent. 1 año": m.get("rent_1a"), "Beta": m.get("beta")})
     return fila
+
+
+COLUMNAS_ESCANER = ["Ticker", "Empresa", "Sector", "Veredicto", "Nota"] + list(sc.PILARES) + [
+    "PER", "EV/EBITDA", "ROE", "Margen op.", "Crec. ingresos", "Deuda neta/EBITDA", "Div.", "Potencial", "vs zona compra"]
 
 
 @st.cache_data(ttl=3600, show_spinner=False)

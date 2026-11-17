@@ -30,7 +30,7 @@ export default function(component) {
 
 _componente = st.components.v2.component("almacen_usuario", js=_JS) if hasattr(st, "components") and hasattr(st.components, "v2") else None
 
-VACIO = {"favoritos": {}, "alertas": [], "notas": {}, "tesis": {}, "eventos": []}
+VACIO = {"favoritos": {}, "alertas": [], "notas": {}, "tesis": {}, "eventos": [], "planes": {}}
 
 
 def montar():

@@ -10,9 +10,11 @@ st.set_page_config(page_title="Analizador de empresas", page_icon="📊", layout
 usuario.montar()  # favoritos, alertas y notas guardados en este navegador
 
 paginas = [
+    st.Page("vistas/resumen.py", title="Resumen del día", icon="☀️"),
     st.Page("vistas/empresa.py", title="Analizar empresa", icon="🔎", default=True),
     st.Page("vistas/favoritos.py", title="Mi lista y alertas", icon="⭐"),
     st.Page("vistas/calendario.py", title="Calendario", icon="📅"),
+    st.Page("vistas/sectores.py", title="Sectores", icon="🏭"),
     st.Page("vistas/simulador.py", title="Simulador", icon="🎯"),
     st.Page("vistas/escaner.py", title="Escáner", icon="📡"),
     st.Page("vistas/backtest.py", title="Backtest del modelo", icon="🧪"),

@@ -5,7 +5,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from comun import (COLOR, GRIS, abrir_empresa, ajustes, analizar, cargar_varias, config_columnas, fila_resumen, selector_universo,
+import ideas
+from comun import (COLOR, COLUMNAS_ESCANER, GRIS, abrir_empresa, ajustes, analizar, cargar_varias, config_columnas, fila_resumen, selector_universo,
                    tiempo_estimado)
 
 st.sidebar.title("📡 Escáner")
@@ -46,6 +47,41 @@ k[0].metric("Analizadas", len(df))
 for col, v in zip(k[1:], ["Comprar", "Esperar", "Vender"]):
     col.metric(v, int((df["Veredicto"] == v).sum()))
 
+# Búsquedas de ideas --------------------------------------------------------------
+st.markdown("#### 💡 Búsquedas de ideas")
+st.caption("Filtros preparados como los que usan los analistas para encontrar candidatas. Proponen empresas que mirar, "
+           "no conclusiones: abre cada una y comprueba si la historia tiene sentido.")
+busqueda = st.segmented_control("Búsqueda", list(ideas.BUSQUEDAS), key="esc_busqueda", label_visibility="collapsed")
+if busqueda:
+    b = ideas.BUSQUEDAS[busqueda]
+    if "Desde máx. 52s" not in df:
+        st.warning("Este escaneo es de una versión anterior: vuelve a pulsar **Escanear** para usar todas las búsquedas.")
+    st.info(f"**{busqueda}** · {b['idea']}\n\nCriterios (debe cumplir al menos {b['min']} de {len(b['criterios'])}): "
+            + " · ".join(et for et, _ in b["criterios"]))
+    res_ideas = ideas.aplicar(df, busqueda)
+    if res_ideas.empty:
+        st.caption("Ninguna empresa de este universo cumple los criterios. Prueba con otro mercado o un universo más grande.")
+    else:
+        cols = ["Ticker", "Empresa", "Sector", "Veredicto", "Nota", "Cumple", "Por qué", "Potencial", "PER", "ROE",
+                "Crec. ingresos", "Deuda neta/EBITDA", "Div.", "FCF yield", "Desde máx. 52s"]
+        st.dataframe(res_ideas, hide_index=True, width="stretch", column_config=config_columnas(),
+                     column_order=[c for c in cols if c in res_ideas], height=min(36 * (len(res_ideas) + 1), 460))
+        st.markdown(f"**Las {min(5, len(res_ideas))} primeras, en una ficha**")
+        for _, f in res_ideas.head(5).iterrows():
+            debiles = sorted(((f.get(p), p) for p in ("Valoración", "Calidad", "Salud financiera", "Crecimiento", "Técnico")
+                              if pd.notna(f.get(p))), key=lambda x: x[0])
+            with st.expander(f"{f['Ticker']} · {f['Empresa']} — {b['lado']} — cumple {f['Cumple']} · nota {f['Nota']:.0f}"):
+                st.markdown(f"- **Por qué aparece:** {f['Por qué']}.")
+                if pd.notna(f.get("Potencial")):
+                    st.markdown(f"- **Hasta su valor justo:** {f['Potencial'] * 100:+.0f}%".replace(".", ","))
+                if debiles:
+                    st.markdown(f"- **Qué podría salir mal:** su punto más flojo es **{debiles[0][1].lower()}** "
+                                f"({debiles[0][0]:.0f}/100). Comprueba si es pasajero.")
+                st.markdown("- **Siguiente paso:** abre el análisis, busca el catalizador y, si te convence, escribe tu tesis.")
+                if st.button("🔎 Analizar y escribir tesis", key=f"idea_{busqueda}_{f['Ticker']}"):
+                    abrir_empresa(f["Ticker"])
+    st.divider()
+
 f1, f2, f3 = st.columns([1, 1.4, 1.6])
 solo_comprar = f1.checkbox("Solo 'Comprar'", key="esc_solo_comprar")
 solo_zona = f2.checkbox("Solo por debajo de su zona de compra", key="esc_solo_zona")
@@ -60,7 +96,8 @@ if solo_zona:
     vista = vista[vista["vs zona compra"].notna() & (vista["vs zona compra"] <= 0)]
 
 st.caption(f"Mostrando {len(vista)} de {len(df)} empresas")
-st.dataframe(vista, hide_index=True, width="stretch", column_config=config_columnas(), height=min(36 * (len(vista) + 1), 640))
+st.dataframe(vista, hide_index=True, width="stretch", column_config=config_columnas(), height=min(36 * (len(vista) + 1), 640),
+             column_order=[c for c in COLUMNAS_ESCANER if c in vista])
 st.caption("**vs zona compra**: cuánto está el precio por encima (+) o por debajo (−) del precio de compra con margen de seguridad. "
            "**Potencial**: distancia al valor justo estimado.")
 
