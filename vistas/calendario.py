@@ -7,7 +7,7 @@ import streamlit as st
 import agenda
 import tesis as ts
 import usuario as us
-from comun import abrir_empresa, eventos_empresa, precios_max
+from comun import abrir_empresa, buscar, eventos_empresa, precios_max
 
 st.sidebar.title("📅 Calendario")
 st.title("📅 Calendario de eventos")
@@ -30,8 +30,20 @@ c1, c2, c3, c4 = st.columns([2.6, 1, 1, 1.6], vertical_alignment="bottom")
 horizonte = c1.segmented_control("Mostrar", ["2 semanas", "1 mes", "3 meses", "6 meses"], default="1 mes", key="cal_horizonte") or "1 mes"
 ver_fed = c2.toggle("Fed (EE. UU.)", value=True, key="cal_fed")
 ver_bce = c3.toggle("BCE (euro)", value=True, key="cal_bce")
-extra = c4.text_input("Añadir tickers solo para esta vista", placeholder="Ej.: AAPL, SAN.MC", key="cal_extra")
-universo += [x.strip().upper() for x in extra.replace(";", ",").split(",") if x.strip() and x.strip().upper() not in universo]
+extra = c4.text_input("Añadir empresas solo para esta vista", placeholder="Ej.: AAPL, Inditex, nvidia", key="cal_extra",
+                      help="Tickers o nombres separados por comas")
+for _txt in [x.strip() for x in extra.replace(";", ",").split(",") if x.strip()]:
+    _tk = _txt.upper()
+    if " " in _txt or not any(c in _txt for c in ".-^=") and len(_txt) > 5 or _txt != _txt.upper():
+        try:  # han escrito un nombre ("nvidia", "banco santander"): lo convertimos en ticker
+            _r = buscar(_txt)
+            if _r:
+                _tk = _r[0]["symbol"]
+                nombres.setdefault(_tk, _r[0].get("nombre", ""))
+        except Exception:
+            pass
+    if _tk not in universo:
+        universo.append(_tk)
 
 dias = {"2 semanas": 14, "1 mes": 31, "3 meses": 92, "6 meses": 183}[horizonte]
 hoy = pd.Timestamp.today().normalize()
@@ -113,7 +125,7 @@ if proximos:
                         "Empresa": x.get("empresa", ""), "Evento": x["texto"],
                         "Impacto": agenda.IMPACTO_ICONO.get(x["impacto"], x["impacto"]), "Tú": posicion(x["ticker"]) if x["tipo"] != "Macro" else ""}
                        for x in proximos])
-    filtro = st.multiselect("Tipos", sorted(df["Tipo"].unique()), default=sorted(df["Tipo"].unique()), key="cal_tipos")
+    filtro = st.multiselect("Tipos", sorted(df["Tipo"].unique()), default=sorted(df["Tipo"].unique()))
     st.dataframe(df[df["Tipo"].isin(filtro)], hide_index=True, width="stretch",
                  column_config={"Fecha": st.column_config.DateColumn(format="DD/MM/YYYY")})
     c1, c2, c3 = st.columns([2, 1, 1], vertical_alignment="bottom")
