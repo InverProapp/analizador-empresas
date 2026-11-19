@@ -16,6 +16,12 @@ st.caption("Lo esencial para leer un gráfico: velas, figuras, volumen, tendenci
            "Cada concepto con un dibujo de ejemplo. Al final, practica con empresas reales y ponte a prueba.")
 
 CFG = {"displayModeBar": False}
+# Fichas de una misma fila con la misma altura
+st.markdown("""<style>
+[data-testid="stColumn"] > [data-testid="stVerticalBlock"]:has(> [data-testid="stLayoutWrapper"]:only-child) { height: 100%; }
+[data-testid="stColumn"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"]:only-child,
+[data-testid="stColumn"] > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"]:only-child > [data-testid="stVerticalBlock"] { height: 100%; }
+</style>""", unsafe_allow_html=True)
 NOMBRES = ["🕯️ Velas", "📐 Figuras", "📊 Volumen", "📈 Tendencias y soportes", "⏱️ Temporalidades", "🧭 Indicadores",
            "🛡️ Gestión del riesgo", "🧾 Órdenes y conceptos", "🔍 Practica", "✅ Test"]
 _t = st.tabs(NOMBRES)
@@ -25,6 +31,14 @@ T = dict(zip(NOMBRES, _t))
 @st.cache_resource(show_spinner=False)
 def _figs_temporalidades():
     return ap.ej_temporalidades()
+
+
+def en_filas(elementos: list, por_fila: int):
+    """Reparte en filas completas: así las fichas de una misma fila empiezan a la misma altura."""
+    for i in range(0, len(elementos), por_fila):
+        cols = st.columns(por_fila)
+        for col, el in zip(cols, elementos[i:i + por_fila]):
+            yield col, el
 
 
 def ficha(titulo: str, etiqueta: str, fig: go.Figure, filas: list[tuple[str, str]]):
@@ -55,10 +69,9 @@ with T["🕯️ Velas"]:
     st.markdown("#### Patrones de velas más importantes")
     filtro = st.segmented_control("Ver", ["Todos", "Giro alcista", "Giro bajista", "Otros"], default="Todos", key="ap_velas_filtro")
     nombres = [n for n, v in ap.VELAS.items() if filtro in (None, "Todos") or (filtro == "Otros" and "Giro" not in v[0]) or v[0] == filtro]
-    cols = st.columns(3)
-    for k, n in enumerate(nombres):
+    for col, n in en_filas(nombres, 3):
         tipo, _, _, _, que, indica, confirma, trampa = ap.VELAS[n]
-        with cols[k % 3]:
+        with col:
             ficha(n, tipo, ap.figura_vela(n), [("Qué es:", que), ("Qué indica:", indica), ("Cómo confirmarlo:", confirma),
                                                ("⚠️ Ojo:", trampa)])
 
@@ -70,10 +83,9 @@ with T["📐 Figuras"]:
     filtro = st.segmented_control("Ver", ["Todas", "Giro", "Continuación", "Otras"], default="Todas", key="ap_fig_filtro")
     lista = [n for n, v in ap.FIGURAS.items() if filtro in (None, "Todas") or (filtro == "Giro" and "Giro" in v[0])
              or (filtro == "Continuación" and "Continuación" in v[0]) or (filtro == "Otras" and "Giro" not in v[0] and "Continuación" not in v[0])]
-    cols = st.columns(2)
-    for k, n in enumerate(lista):
+    for col, n in en_filas(lista, 2):
         tipo, fn, que, confirma, consejo = ap.FIGURAS[n]
-        with cols[k % 2]:
+        with col:
             ficha(n, tipo, fn(), [("Qué es:", que), ("Cuándo se confirma y objetivo:", confirma), ("💡 Consejo:", consejo)])
     st.caption("Dibujos esquemáticos: en la realidad las figuras son menos limpias. Puedes dibujar líneas sobre cualquier "
                "empresa en el 🎯 Simulador.")
@@ -90,9 +102,8 @@ with T["📊 Volumen"]:
               "Si el precio sigue subiendo pero el volumen se apaga, cada vez hay menos compradores: posible agotamiento."),
              ("Clímax de volumen", "climax",
               "Un volumen enorme tras una caída larga suele ser pánico (todo el mundo vende a la vez) y a menudo marca un suelo.")]
-    cols = st.columns(2)
-    for k, (t, caso, txt) in enumerate(casos):
-        with cols[k % 2]:
+    for col, (t, caso, txt) in en_filas(casos, 2):
+        with col:
             with st.container(border=True):
                 st.markdown(f"**{t}**")
                 st.plotly_chart(ap.ej_volumen(caso), width="stretch", config=CFG)
@@ -142,9 +153,8 @@ with T["⏱️ Temporalidades"]:
     st.markdown("#### 🔭 El mismo precio, cuatro temporalidades")
     st.caption("Cada gráfico es un zoom del recuadro azul del anterior (cotización inventada).")
     figs = _figs_temporalidades()
-    cols = st.columns(2)
-    for k, (titulo, texto, fig) in enumerate(figs):
-        with cols[k % 2]:
+    for col, (titulo, texto, fig) in en_filas(figs, 2):
+        with col:
             with st.container(border=True):
                 st.markdown(f"**{titulo}**")
                 st.plotly_chart(fig, width="stretch", config=CFG)

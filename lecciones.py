@@ -86,33 +86,46 @@ VELAS = {
 }
 
 
-def grafico_velas(velas: list[tuple], resaltar: tuple[int, int] | None = None, titulo: str = "", alto: int = 250,
-                  anotaciones: list[dict] | None = None) -> go.Figure:
+def grafico_velas(velas: list[tuple], resaltar: tuple[float, float] | None = None, titulo: str = "", alto: int = 250,
+                  anotaciones: list[dict] | None = None, x: list[float] | None = None,
+                  rango_x: tuple[float, float] | None = None) -> go.Figure:
     o, h, l, c = zip(*velas)
-    x = list(range(1, len(velas) + 1))
+    x = x or list(range(1, len(velas) + 1))
     fig = go.Figure(go.Candlestick(x=x, open=o, high=h, low=l, close=c, increasing_line_color=VERDE,
                                    decreasing_line_color=ROJO, increasing_fillcolor=VERDE, decreasing_fillcolor=ROJO,
                                    showlegend=False, hoverinfo="skip"))
     if resaltar:
-        fig.add_vrect(x0=resaltar[0] - 0.5, x1=resaltar[1] + 0.5, fillcolor="rgba(42,111,219,.10)", line_width=0)
+        fig.add_vrect(x0=resaltar[0] - 0.5, x1=resaltar[1] + 0.5, fillcolor="rgba(42,111,219,.10)", line_width=0, layer="below")
     for a in anotaciones or []:
         fig.add_annotation(**a)
     fig.update_layout(height=alto, margin=dict(l=4, r=4, t=28 if titulo else 6, b=4), xaxis_rangeslider_visible=False,
                       title=dict(text=titulo, font=dict(size=13)), xaxis=dict(visible=False), yaxis=dict(visible=False),
                       plot_bgcolor="rgba(0,0,0,0)")
+    if rango_x:
+        fig.update_xaxes(range=list(rango_x))
     return fig
 
 
+HUECOS = 8  # todas las fichas de velas usan el mismo ancho: 4 de contexto + hasta 3 del patrón + 1 de confirmación
+
+
 def figura_vela(nombre: str) -> go.Figure:
+    """Mismo encuadre en todas las fichas: mismas posiciones, mismo tamaño de vela y la misma escala vertical relativa."""
     tipo, contexto, patron, confirma, *_ = VELAS[nombre]
     velas = list(contexto) + list(patron) + ([confirma] if confirma else [])
-    ini = len(contexto) + 1
-    fin = len(contexto) + len(patron)
-    anot = [dict(x=(ini + fin) / 2, y=max(v[1] for v in patron), text=nombre, showarrow=True, arrowhead=2, ay=-28,
+    desplaz = (HUECOS - len(velas)) / 2
+    x = [i + 1 + desplaz for i in range(len(velas))]
+    ini, fin = x[len(contexto)], x[len(contexto) + len(patron) - 1]
+    lo, hi = min(v[2] for v in velas), max(v[1] for v in velas)
+    margen = (hi - lo) * 0.08
+    anot = [dict(x=(ini + fin) / 2, y=1, yref="paper", yanchor="top", text=f"<b>{nombre}</b>", showarrow=False,
                  font=dict(size=11, color=AZUL))]
     if confirma:
-        anot.append(dict(x=fin + 1, y=confirma[2], text="confirmación", showarrow=False, yshift=-12, font=dict(size=10, color=GRIS)))
-    return grafico_velas(velas, (ini, fin), alto=230, anotaciones=anot)
+        anot.append(dict(x=x[-1], y=0, yref="paper", yanchor="bottom", text="confirma", showarrow=False,
+                         font=dict(size=10, color=GRIS)))
+    fig = grafico_velas(velas, (ini, fin), alto=230, anotaciones=anot, x=x, rango_x=(0.4, HUECOS + 0.6))
+    fig.update_yaxes(range=[lo - margen * 2.2, hi + margen * 3.2])
+    return fig
 
 
 def anatomia() -> go.Figure:
@@ -152,8 +165,9 @@ def camino(puntos: list[tuple[float, float]], n: int = 120, ruido: float = 0.6, 
 def _linea(fig, x0, y0, x1, y1, color, texto=None, dash="dash", pos="top left"):
     fig.add_shape(type="line", x0=x0, y0=y0, x1=x1, y1=y1, line=dict(color=color, width=2, dash=dash))
     if texto:
-        fig.add_annotation(x=x1, y=y1, text=texto, showarrow=False, font=dict(size=11, color=color),
-                           xanchor="right", yshift=10 if "top" in pos else -10)
+        fig.add_annotation(x=x0, y=y0, text=texto, showarrow=False, font=dict(size=11, color=color),
+                           xanchor="left", yanchor="bottom" if "top" in pos else "top", yshift=3 if "top" in pos else -3,
+                           bgcolor="rgba(255,255,255,.85)")
 
 
 def _objetivo(fig, x, y_desde, y_hasta, texto="objetivo"):
